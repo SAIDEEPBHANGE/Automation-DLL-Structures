@@ -1,7 +1,6 @@
 ﻿using DllJson.Models;
 using Mono.Cecil;
 using System.Collections.Generic;
-
 namespace DllJson.Services
 {
     public class ReferenceBuilder
@@ -14,14 +13,12 @@ namespace DllJson.Services
             foreach (var assemblyEntry in assemblies)
             {
                 var assembly = assemblyEntry.Value;
-
                 if (!dllLookup.TryGetValue(
                     assembly.Name.Name,
                     out var sourceDll))
                 {
                     continue;
                 }
-
                 foreach (var reference in assembly.MainModule.AssemblyReferences)
                 {
                     if (!dllLookup.TryGetValue(
@@ -30,7 +27,6 @@ namespace DllJson.Services
                     {
                         continue;
                     }
-
                     graph.References.Add(
                         new References
                         {

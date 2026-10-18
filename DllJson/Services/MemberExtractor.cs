@@ -1,6 +1,5 @@
 ﻿using DllJson.Models;
 using Mono.Cecil;
-
 namespace DllJson.Services
 {
     public class MemberExtractor
@@ -14,7 +13,6 @@ namespace DllJson.Services
             ExtractMethods(type, cls);
             ExtractEvents(type, cls);
         }
-
         private void ExtractFields(
             TypeDefinition type,
             Classes cls)
@@ -23,7 +21,6 @@ namespace DllJson.Services
             {
                 if (field.IsSpecialName)
                     continue;
-
                 cls.Fields.Add(new Fields
                 {
                     Name = field.Name,
@@ -34,7 +31,6 @@ namespace DllJson.Services
                 });
             }
         }
-
         private void ExtractProperties(
             TypeDefinition type,
             Classes cls)
@@ -50,7 +46,6 @@ namespace DllJson.Services
                 });
             }
         }
-
         private void ExtractMethods(
             TypeDefinition type,
             Classes cls)
@@ -64,7 +59,6 @@ namespace DllJson.Services
                 {
                     continue;
                 }
-
                 var methodInfo = new Methods
                 {
                     Name = method.Name,
@@ -75,7 +69,6 @@ namespace DllJson.Services
                     IsAbstract = method.IsAbstract,
                     IsConstructor = method.IsConstructor
                 };
-
                 foreach (var parameter in method.Parameters)
                 {
                     methodInfo.Parameters.Add(
@@ -88,11 +81,9 @@ namespace DllJson.Services
                             IsRef = parameter.ParameterType.IsByReference
                         });
                 }
-
                 cls.Methods.Add(methodInfo);
             }
         }
-
         private void ExtractEvents(
             TypeDefinition type,
             Classes cls)

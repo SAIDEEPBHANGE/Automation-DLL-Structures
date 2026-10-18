@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-
 namespace DllJson.Models
 {
     public class AuditRun
@@ -17,14 +16,12 @@ namespace DllJson.Models
         public List<FolderAudit> Folders { get; set; } = new List<FolderAudit>();
         public DateTime GeneratedAt { get; set; }
     }
-
     public class AuditConfig
     {
         public string SolutionPath { get; set; }
         public string AuditFolder { get; set; }
         public List<string> IncludePatterns { get; set; }
     }
-
     public class AuditSummary
     {
         public int FoldersScanned { get; set; }
@@ -36,7 +33,6 @@ namespace DllJson.Models
         public int NativeFound { get; set; }
         public List<string> Warnings { get; set; } = new List<string>();
     }
-
     public class FolderAudit
     {
         public string FolderName { get; set; }
@@ -50,7 +46,6 @@ namespace DllJson.Models
         public List<NativeDllAudit> NativeDlls { get; set; } = new List<NativeDllAudit>();
         public List<string> Warnings { get; set; } = new List<string>();
     }
-
     public class Counts
     {
         public int Processed { get; set; }
@@ -59,7 +54,6 @@ namespace DllJson.Models
         public int Skipped { get; set; }
         public int Native { get; set; }
     }
-
     public class DllAudit
     {
         public string DllName { get; set; }
@@ -77,7 +71,6 @@ namespace DllJson.Models
         public List<StepAudit> Steps { get; set; } = new List<StepAudit>();
         public List<string> Warnings { get; set; } = new List<string>();
     }
-
     public class NativeDllAudit
     {
         public string DllName { get; set; }
@@ -96,7 +89,6 @@ namespace DllJson.Models
         public string OperatingSystemVersion { get; set; }
         public string ExtractionError { get; set; }
     }
-
     public class StepAudit
     {
         public string Step { get; set; }
@@ -106,7 +98,6 @@ namespace DllJson.Models
         public string Level { get; set; }
         public string Message { get; set; }
     }
-
     public class ExceptionInfo
     {
         public string Type { get; set; }

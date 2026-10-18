@@ -1,7 +1,6 @@
 ﻿/*
   Author: Saideep Bhange
  */
-
 using DllJson.Models;
 using DllJson.Services;
 using System;
@@ -10,7 +9,6 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Diagnostics;
-
 namespace DllJson
 {
     public class Program
@@ -18,9 +16,7 @@ namespace DllJson
         static void Main(string[] args)
         {
             var config = new FoldersJson();
-
             Console.WriteLine("Scanning configurations...");
-
             var run = new AuditRun
             {
                 RunId = Guid.NewGuid(),
@@ -35,7 +31,6 @@ namespace DllJson
                     IncludePatterns = new List<string> { "*.dll" }
                 }
             };
-
             foreach (var folderConfig in config.Configurations)
             {
                 var folderAudit = new FolderAudit
@@ -44,33 +39,24 @@ namespace DllJson
                     FolderPath = folderConfig.FolderPath,
                     StartedAt = DateTime.UtcNow
                 };
-
                 try
                 {
                     Directory.CreateDirectory(
                         folderConfig.OutputPath);
-
                     Console.WriteLine(
                         $"Processing: {folderConfig.JsonFileName}");
-
                     var scanner = new AssemblyScanner();
-
                     var scanResult = scanner.Scan(folderConfig);
-
                     var graph = scanResult.Graph;
-
                     // Update counts
                     folderAudit.DllCount = graph.Dlls.Count + (scanResult.Skipped?.Count ?? 0) + (scanResult.NativeDlls?.Count ?? 0);
-
                     //
                     // Create Dlls folder
                     //
                     var dllFolder = Path.Combine(
                         folderConfig.OutputPath,
                         "Dlls");
-
                     Directory.CreateDirectory(dllFolder);
-
                     //
                     // Save one file per DLL
                     //
@@ -82,27 +68,22 @@ namespace DllJson
                             DllPath = dll.FilePath,
                             StartedAt = DateTime.UtcNow
                         };
-
                         try
                         {
                             var dllFileName =
                                 MakeSafeFileName(dll.DllName) + ".json";
-
                             var dllPath = Path.Combine(
                                 dllFolder,
                                 dllFileName);
-
                             var dllJson = JsonSerializer.Serialize(
                                 dll,
                                 new JsonSerializerOptions
                                 {
                                     WriteIndented = true
                                 });
-
                             File.WriteAllText(
                                 dllPath,
                                 dllJson);
-
                             dllAudit.EndedAt = DateTime.UtcNow;
                             dllAudit.DurationMs = (long)(dllAudit.EndedAt.Value - dllAudit.StartedAt).TotalMilliseconds;
                             dllAudit.Status = "Processed";
@@ -113,7 +94,6 @@ namespace DllJson
                                                            + (dll.Structs?.Count ?? 0)
                                                            + (dll.Enums?.Count ?? 0)
                                                            + (dll.Delegates?.Count ?? 0);
-
                             folderAudit.Counts.Processed++;
                         }
                         catch (Exception exDll)
@@ -129,15 +109,11 @@ namespace DllJson
                                 Message = exDll.Message,
                                 StackTrace = exDll.StackTrace
                             };
-
                             folderAudit.Counts.Failed++;
-
                             Console.WriteLine($"DLL ERROR: {exDll.Message}");
                         }
-
                         folderAudit.Dlls.Add(dllAudit);
                     }
-
                     // record native DLLs with extracted metadata
                     if (scanResult.NativeDlls != null && scanResult.NativeDlls.Count > 0)
                     {
@@ -161,12 +137,10 @@ namespace DllJson
                                 OperatingSystemVersion = nativeInfo.OperatingSystemVersion,
                                 ExtractionError = nativeInfo.ExtractionError
                             };
-
                             folderAudit.NativeDlls.Add(nativeAudit);
                             folderAudit.Counts.Native++;
                         }
                     }
-
                     // record other skipped/failed assemblies from scanner (non-native)
                     if (scanResult.Skipped != null && scanResult.Skipped.Count > 0)
                     {
@@ -175,7 +149,6 @@ namespace DllJson
                             // Skip native DLLs - already handled above
                             if (skip.SkipCategory == "Native")
                                 continue;
-
                             var dllAudit = new DllAudit
                             {
                                 DllName = Path.GetFileName(skip.FilePath),
@@ -188,12 +161,10 @@ namespace DllJson
                                 Reason = skip.Reason,
                                 Exception = skip.Exception
                             };
-
                             folderAudit.Dlls.Add(dllAudit);
                             folderAudit.Counts.Failed++;
                         }
                     }
-
                     //
                     // Build lightweight graph
                     //
@@ -213,37 +184,29 @@ namespace DllJson
                             })
                             .ToList()
                     };
-
                     //
                     // Save master graph
                     //
                     var graphPath = Path.Combine(
                         folderConfig.OutputPath,
                         folderConfig.JsonFileName);
-
                     var graphJson = JsonSerializer.Serialize(
                         lightGraph,
                         new JsonSerializerOptions
                         {
                             WriteIndented = true
                         });
-
                     File.WriteAllText(
                         graphPath,
                         graphJson);
-
                     folderAudit.EndedAt = DateTime.UtcNow;
                     folderAudit.DurationMs = (long)(folderAudit.EndedAt.Value - folderAudit.StartedAt).TotalMilliseconds;
-
                     Console.WriteLine(
                         $"Master Graph Saved: {graphPath}");
-
                     Console.WriteLine(
                         $"DLL Count: {graph.Dlls.Count}");
-
                     Console.WriteLine(
                         $"Reference Count: {graph.References.Count}");
-
                     Console.WriteLine(
                         $"DLL Files Saved: {graph.Dlls.Count}");
                 }
@@ -251,12 +214,9 @@ namespace DllJson
                 {
                     folderAudit.EndedAt = DateTime.UtcNow;
                     folderAudit.DurationMs = (long)(folderAudit.EndedAt.Value - folderAudit.StartedAt).TotalMilliseconds;
-
                     folderAudit.Counts.Failed = folderAudit.DllCount; // mark all as failed for this folder
-
                     Console.WriteLine(
                         $"ERROR: {ex.Message}");
-
                     folderAudit.Warnings.Add(ex.Message);
                 }
                 finally
@@ -264,7 +224,6 @@ namespace DllJson
                     run.Folders.Add(folderAudit);
                 }
             }
-
             run.EndedAt = DateTime.UtcNow;
             run.TotalDurationMs = (long)(run.EndedAt.Value - run.StartedAt).TotalMilliseconds;
             run.Summary.FoldersScanned = run.Folders.Count;
@@ -274,14 +233,11 @@ namespace DllJson
             run.Summary.PartiallyProcessed = run.Folders.Sum(f => f.Counts.PartiallyProcessed);
             run.Summary.Skipped = run.Folders.Sum(f => f.Counts.Skipped);
             run.Summary.NativeFound = run.Folders.Sum(f => f.Counts.Native);
-
             var auditFolder = run.Config.AuditFolder;
             var writer = new AuditWriter(run, auditFolder);
             writer.Write();
-
             Console.WriteLine("ALL DONE");
         }
-
         private static string MakeSafeFileName(
             string fileName)
         {
@@ -292,7 +248,6 @@ namespace DllJson
                         invalidChar,
                         '_');
             }
-
             return fileName;
         }
     }

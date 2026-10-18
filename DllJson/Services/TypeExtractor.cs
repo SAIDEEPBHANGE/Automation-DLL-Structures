@@ -1,18 +1,15 @@
 ﻿using DllJson.Models;
 using Mono.Cecil;
 using System.Linq;
-
 namespace DllJson.Services
 {
     public class TypeExtractor
     {
         private readonly MemberExtractor _memberExtractor;
-
         public TypeExtractor()
         {
             _memberExtractor = new MemberExtractor();
         }
-
         public void ExtractTypes(
             AssemblyDefinition assembly,
             DllInfo dllInfo)
@@ -22,7 +19,6 @@ namespace DllJson.Services
                 ProcessType(type, dllInfo, null);
             }
         }
-
         private void ProcessType(
             TypeDefinition type,
             DllInfo dllInfo,
@@ -30,7 +26,6 @@ namespace DllJson.Services
         {
             if (type.Name.StartsWith("<"))
                 return;
-
             //
             // Interface
             //
@@ -43,16 +38,13 @@ namespace DllJson.Services
                     FullName = type.FullName,
                     DeclaringType = declaringType
                 };
-
                 foreach (var parent in type.Interfaces)
                 {
                     iface.ImplementedInterfaces.Add(
                         parent.InterfaceType.FullName);
                 }
-
                 dllInfo.Interfaces.Add(iface);
             }
-
             //
             // Enum
             //
@@ -65,7 +57,6 @@ namespace DllJson.Services
                     FullName = type.FullName,
                     DeclaringType = declaringType
                 };
-
                 foreach (var field in type.Fields)
                 {
                     if (!field.IsSpecialName)
@@ -73,10 +64,8 @@ namespace DllJson.Services
                         enumInfo.Values.Add(field.Name);
                     }
                 }
-
                 dllInfo.Enums.Add(enumInfo);
             }
-
             //
             // Delegate
             //
@@ -89,15 +78,12 @@ namespace DllJson.Services
                     FullName = type.FullName,
                     DeclaringType = declaringType
                 };
-
                 var invokeMethod = type.Methods.FirstOrDefault(
                     m => m.Name == "Invoke");
-
                 if (invokeMethod != null)
                 {
                     delegateInfo.ReturnType =
                         invokeMethod.ReturnType.FullName;
-
                     foreach (var parameter in invokeMethod.Parameters)
                     {
                         delegateInfo.Parameters.Add(
@@ -111,10 +97,8 @@ namespace DllJson.Services
                             });
                     }
                 }
-
                 dllInfo.Delegates.Add(delegateInfo);
             }
-
             //
             // Struct
             //
@@ -127,10 +111,8 @@ namespace DllJson.Services
                     FullName = type.FullName,
                     DeclaringType = declaringType
                 };
-
                 dllInfo.Structs.Add(structInfo);
             }
-
             //
             // Class
             //
@@ -146,20 +128,16 @@ namespace DllJson.Services
                     IsAbstract = type.IsAbstract,
                     IsSealed = type.IsSealed
                 };
-
                 foreach (var iface in type.Interfaces)
                 {
                     cls.ImplementedInterfaces.Add(
                         iface.InterfaceType.FullName);
                 }
-
                 _memberExtractor.PopulateClassMembers(
                     type,
                     cls);
-
                 dllInfo.Classes.Add(cls);
             }
-
             //
             // Nested Types
             //
@@ -171,7 +149,6 @@ namespace DllJson.Services
                     type.FullName);
             }
         }
-
         private bool IsDelegate(TypeDefinition type)
         {
             return type.BaseType != null &&

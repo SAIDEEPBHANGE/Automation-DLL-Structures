@@ -3,7 +3,6 @@
     public class Events
     {
         public string Name { get; set; }
-
         public string EventType { get; set; }
     }
 }

@@ -2,7 +2,6 @@ using System;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
-
 namespace DllJson.Services
 {
     public class NativeDllAnalyzer
@@ -16,7 +15,6 @@ namespace DllJson.Services
             public byte[] e_res;
             public uint e_lfanew;
         }
-
         [StructLayout(LayoutKind.Sequential)]
         private struct IMAGE_FILE_HEADER
         {
@@ -28,7 +26,6 @@ namespace DllJson.Services
             public ushort SizeOfOptionalHeader;
             public ushort Characteristics;
         }
-
         [StructLayout(LayoutKind.Sequential)]
         private struct IMAGE_OPTIONAL_HEADER_32
         {
@@ -57,7 +54,6 @@ namespace DllJson.Services
             public ushort Subsystem;
             public ushort DllCharacteristics;
         }
-
         private enum MachineType : ushort
         {
             I386 = 0x014c,
@@ -79,7 +75,6 @@ namespace DllJson.Services
             M32R = 0x9041,
             ARM64EC = 0xa641
         }
-
         private enum Subsystem : ushort
         {
             Unknown = 0,
@@ -96,7 +91,6 @@ namespace DllJson.Services
             XboxApp = 14,
             XboxSystemApp = 16
         }
-
         public NativeDllInfo ExtractNativeDllInfo(string filePath)
         {
             var info = new NativeDllInfo
@@ -104,7 +98,6 @@ namespace DllJson.Services
                 FilePath = filePath,
                 FileName = Path.GetFileName(filePath)
             };
-
             try
             {
                 // Get file info
@@ -112,7 +105,6 @@ namespace DllJson.Services
                 info.FileSizeBytes = fileInfo.Length;
                 info.CreatedDate = fileInfo.CreationTimeUtc;
                 info.ModifiedDate = fileInfo.LastWriteTimeUtc;
-
                 // Get file version
                 try
                 {
@@ -127,36 +119,29 @@ namespace DllJson.Services
                 {
                     // version info not available
                 }
-
                 // Parse PE header
                 try
                 {
                     using (var file = File.OpenRead(filePath))
                     {
                         var dosHeader = ReadStruct<IMAGE_DOS_HEADER>(file);
-
                         if (dosHeader.e_magic[0] != 'M' || dosHeader.e_magic[1] != 'Z')
                         {
                             info.Architecture = "Invalid PE";
                             return info;
                         }
-
                         file.Seek(dosHeader.e_lfanew, SeekOrigin.Begin);
                         var signature = new byte[4];
                         file.Read(signature, 0, 4);
-
                         if (signature[0] != 'P' || signature[1] != 'E')
                         {
                             info.Architecture = "Unknown";
                             return info;
                         }
-
                         var fileHeader = ReadStruct<IMAGE_FILE_HEADER>(file);
-
                         info.Architecture = GetMachineType(fileHeader.Machine);
                         info.TimeDateStamp = UnixTimeStampToDateTime(fileHeader.TimeDateStamp);
                         info.Characteristics = fileHeader.Characteristics;
-
                         // Read optional header for subsystem info
                         var optionalHeader = ReadStruct<IMAGE_OPTIONAL_HEADER_32>(file);
                         info.Subsystem = GetSubsystemName((Subsystem)optionalHeader.Subsystem);
@@ -172,10 +157,8 @@ namespace DllJson.Services
             {
                 info.ExtractionError = ex.Message;
             }
-
             return info;
         }
-
         private T ReadStruct<T>(FileStream file) where T : struct
         {
             var size = Marshal.SizeOf(typeof(T));
@@ -191,7 +174,6 @@ namespace DllJson.Services
                 handle.Free();
             }
         }
-
         private string GetMachineType(ushort machine)
         {
             switch ((MachineType)machine)
@@ -206,7 +188,6 @@ namespace DllJson.Services
                 default: return "Unknown";
             }
         }
-
         private string GetSubsystemName(Subsystem subsystem)
         {
             switch (subsystem)
@@ -226,7 +207,6 @@ namespace DllJson.Services
                 default: return "Unknown";
             }
         }
-
         private DateTime UnixTimeStampToDateTime(uint timestamp)
         {
             var dateTime = new DateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc);
@@ -234,7 +214,6 @@ namespace DllJson.Services
             return dateTime;
         }
     }
-
     public class NativeDllInfo
     {
         public string FilePath { get; set; }

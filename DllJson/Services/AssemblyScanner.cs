@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using System.Threading.Tasks;
-
 namespace DllJson.Services
 {
     public class AssemblyScanner
@@ -14,28 +13,21 @@ namespace DllJson.Services
         private readonly TypeExtractor _typeExtractor;
         private readonly ReferenceBuilder _referenceBuilder;
         private readonly NativeDllAnalyzer _nativeAnalyzer;
-
         public AssemblyScanner()
         {
             _typeExtractor = new TypeExtractor();
             _referenceBuilder = new ReferenceBuilder();
             _nativeAnalyzer = new NativeDllAnalyzer();
         }
-
         public ScanResult Scan(FolderJson config)
         {
             var graph = new AssemblyGraph();
-
             Console.WriteLine($"Scanning: {config.FolderPath}");
-
             var loadResult = LoadAssemblies(config.FolderPath);
-
             var assemblies = loadResult.Loaded;
-
             var dllLookup =
                 new Dictionary<string, DllInfo>(
                     StringComparer.OrdinalIgnoreCase);
-
             //
             // Build DllInfo
             //
@@ -43,23 +35,18 @@ namespace DllJson.Services
             {
                 var filePath = item.Key;
                 var assembly = item.Value;
-
                 var dllInfo = CreateDllInfo(
                     assembly,
                     filePath);
-
                 graph.Dlls.Add(dllInfo);
-
                 dllLookup[assembly.Name.Name] = dllInfo;
             }
-
             //
             // Extract Types
             //
             foreach (var item in assemblies)
             {
                 var assembly = item.Value;
-
                 if (dllLookup.TryGetValue(
                     assembly.Name.Name,
                     out var dllInfo))
@@ -69,7 +56,6 @@ namespace DllJson.Services
                         dllInfo);
                 }
             }
-
             //
             // Build References
             //
@@ -77,7 +63,6 @@ namespace DllJson.Services
                 graph,
                 assemblies,
                 dllLookup);
-
             return new ScanResult
             {
                 Graph = graph,
@@ -85,23 +70,18 @@ namespace DllJson.Services
                 NativeDlls = loadResult.NativeDlls
             };
         }
-
         private LoadResult LoadAssemblies(
             string rootFolder)
         {
             var loaded = new ConcurrentDictionary<string, AssemblyDefinition>(StringComparer.OrdinalIgnoreCase);
             var skipped = new ConcurrentBag<SkippedAssemblyInfo>();
             var nativeDlls = new ConcurrentBag<NativeDllInfo>();
-
             var dllFiles = Directory.GetFiles(
                 rootFolder,
                 "*.dll",
                 SearchOption.AllDirectories);
-
             Console.WriteLine($"DLLs Found: {dllFiles.Length}");
-
             var maxDegree = Math.Max(1, Environment.ProcessorCount - 1);
-
             Parallel.ForEach(dllFiles, new ParallelOptions { MaxDegreeOfParallelism = maxDegree }, file =>
             {
                 try
@@ -111,7 +91,6 @@ namespace DllJson.Services
                         // Extract native DLL info
                         var nativeInfo = _nativeAnalyzer.ExtractNativeDllInfo(file);
                         nativeDlls.Add(nativeInfo);
-
                         skipped.Add(new SkippedAssemblyInfo
                         {
                             FilePath = file,
@@ -121,7 +100,6 @@ namespace DllJson.Services
                         });
                         return;
                     }
-
                     var assembly = AssemblyDefinition.ReadAssembly(file);
                     loaded[file] = assembly;
                 }
@@ -156,7 +134,6 @@ namespace DllJson.Services
                     });
                 }
             });
-
             return new LoadResult
             {
                 Loaded = new Dictionary<string, AssemblyDefinition>(loaded, StringComparer.OrdinalIgnoreCase),
@@ -164,7 +141,6 @@ namespace DllJson.Services
                 NativeDlls = new List<NativeDllInfo>(nativeDlls)
             };
         }
-
         private DllInfo CreateDllInfo(
             AssemblyDefinition assembly,
             string filePath)
@@ -181,7 +157,6 @@ namespace DllJson.Services
                     ScanDate = DateTime.UtcNow
                 }
             };
-
             foreach (var reference in assembly.MainModule.AssemblyReferences)
             {
                 dllInfo.Dependencies.Add(
@@ -191,10 +166,8 @@ namespace DllJson.Services
                         Version = reference.Version?.ToString()
                     });
             }
-
             return dllInfo;
         }
-
         private bool IsDotNetAssembly(string file)
         {
             try
@@ -209,14 +182,12 @@ namespace DllJson.Services
             }
         }
     }
-
     public class LoadResult
     {
         public Dictionary<string, AssemblyDefinition> Loaded { get; set; } = new Dictionary<string, AssemblyDefinition>(StringComparer.OrdinalIgnoreCase);
         public List<SkippedAssemblyInfo> Skipped { get; set; } = new List<SkippedAssemblyInfo>();
         public List<NativeDllInfo> NativeDlls { get; set; } = new List<NativeDllInfo>();
     }
-
     public class SkippedAssemblyInfo
     {
         public string FilePath { get; set; }
@@ -225,7 +196,6 @@ namespace DllJson.Services
         public DllJson.Models.ExceptionInfo Exception { get; set; }
         public NativeDllInfo NativeDllInfo { get; set; }
     }
-
     public class ScanResult
     {
         public AssemblyGraph Graph { get; set; }
