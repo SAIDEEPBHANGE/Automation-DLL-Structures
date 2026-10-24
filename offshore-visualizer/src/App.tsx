@@ -1,222 +1,126 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import type { MasterGraphPayload } from './types/graph';
-import type { DllDetailPayload } from './types/detail';
-import { ThreeGraphCanvas } from './components/ThreeGraphCanvas';
-import { Navbar, type SearchOption } from './components/Navbar';
-import { Loader } from './components/Loader';
-import { DetailDrawer } from './components/DetailDrawer';
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Box, Fade } from "@mui/material";
+import type { MasterGraphPayload } from "./types/graph";
+import type { DllDetailPayload, RawDllDetail } from "./types/detail";
+import { ThreeGraphCanvas } from "./components/ThreeGraphCanvas";
+import { Navbar, type Page } from "./components/Navbar";
+import { Loader } from "./components/Loader";
+import { DetailDrawer } from "./components/DetailDrawer";
+import { AuditPage } from "./pages/AuditPage";
+import { fetchJson } from "./utils/fetchUtils";
+import { buildInitialDetail, mapDllDetail } from "./utils/detailMapper";
+import { buildSearchOptions, getGraphStats, resolveDetailUrl, type Suite } from "./utils/graphUtils";
 
 export const App: React.FC = () => {
+  const [page, setPage] = useState<Page>("graph");
   const [data, setData] = useState<MasterGraphPayload | null>(null);
-  const [selectedSuite, setSelectedSuite] = useState<'SmartPlant3D' | 'SmartPlantPID'>('SmartPlant3D');
+  const [selectedSuite, setSelectedSuite] = useState<Suite>("SmartPlant3D");
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [loadedSuite, setLoadedSuite] = useState<Suite | null>(null);
+  const isLoading = loadedSuite !== selectedSuite;
 
-  // Drawer states
-  const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false);
-  const [nodeDetail, setNodeDetail] = useState<DllDetailPayload | null>(null);
-  const [isDetailLoading, setIsDetailLoading] = useState<boolean>(false);
+  // Result of the AST chunk fetch, keyed by suite + node (null detail = fetch failed)
+  const [fetched, setFetched] = useState<{ key: string; detail: DllDetailPayload | null } | null>(null);
 
-  const handleSuiteChange = useCallback((suite: 'SmartPlant3D' | 'SmartPlantPID') => {
+  const handleSuiteChange = useCallback((suite: Suite) => {
     setSelectedNode(null);
-    setIsDrawerOpen(false);
-    setNodeDetail(null);
     setSelectedSuite(suite);
+    setPage("graph");
   }, []);
 
-  // Fetch Master Topology
   useEffect(() => {
-    let isCancelled = false;
-    setIsLoading(true);
-
-    fetch(`/data/${selectedSuite}/${selectedSuite}.json`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-        return res.json();
+    const ctrl = new AbortController();
+    fetchJson<MasterGraphPayload>(`/data/${selectedSuite}/${selectedSuite}.json`, ctrl.signal)
+      .then((payload) => {
+        setData(payload);
+        setLoadedSuite(selectedSuite);
       })
-      .then((payload: MasterGraphPayload) => {
-        if (!isCancelled) {
-          setData(payload);
-          setIsLoading(false);
-        }
-      })
-      .catch((err) => {
-        if (!isCancelled) {
-          console.error('Failed to load topology:', err);
-          setIsLoading(false);
-        }
+      .catch((err: Error) => {
+        if (err.name === "AbortError") return;
+        console.error("Failed to load topology:", err);
+        setLoadedSuite(selectedSuite);
       });
-
-    return () => {
-      isCancelled = true;
-    };
+    return () => ctrl.abort();
   }, [selectedSuite]);
 
-  // Lazy-load per-DLL AST details when selectedNode changes
-  // Immediate Display + Background AST Chunk Fetch
+  const selectedDll = useMemo(
+    () => (data && selectedNode ? data.dlls.find((d) => d.id === parseInt(selectedNode, 10)) : undefined),
+    [data, selectedNode],
+  );
+  const initialDetail = useMemo(
+    () => (data && selectedDll ? buildInitialDetail(data, selectedDll) : null),
+    [data, selectedDll],
+  );
+  const detailKey = selectedDll ? `${selectedSuite}:${selectedDll.id}` : null;
+
+  // Master metadata shows immediately; the AST chunk is lazy-loaded
   useEffect(() => {
-    if (!selectedNode || !data) {
-      setNodeDetail(null);
-      setIsDrawerOpen(false);
-      setIsDetailLoading(false);
-      return;
-    }
-
-    const targetId = parseInt(selectedNode, 10);
-    const dllMeta = data.dlls.find((d) => d.id === targetId);
-
-    if (!dllMeta) return;
-
-    // 1. Calculate connected edges directly from in-memory master graph
-    const outboundDeps: Array<{ id: number; name: string }> = [];
-    const inboundDeps: Array<{ id: number; name: string }> = [];
-
-    data.dllEdges.forEach((edge) => {
-      if (edge.s === targetId) {
-        const dest = data.dlls.find((d) => d.id === edge.t);
-        outboundDeps.push({
-          id: edge.t,
-          name: dest ? dest.name : `DLL #${edge.t}`,
-        });
-      } else if (edge.t === targetId) {
-        const src = data.dlls.find((d) => d.id === edge.s);
-        inboundDeps.push({
-          id: edge.s,
-          name: src ? src.name : `DLL #${edge.s}`,
-        });
-      }
-    });
-
-    const isVendor =
-      dllMeta.name.startsWith('Microsoft.') ||
-      dllMeta.name.startsWith('Telerik.') ||
-      dllMeta.name.startsWith('CefSharp.') ||
-      dllMeta.name.startsWith('Xceed.');
-
-    // 2. Set instant state so the drawer opens immediately without blocking on network
-    const initialDetail: DllDetailPayload = {
-      id: dllMeta.id,
-      name: dllMeta.name,
-      version: dllMeta.version || '1.0.0.0',
-      architecture: isVendor ? 'Vendor / Runtime' : 'MSIL / .NET',
-      totalTypes: 0,
-      dependencies: outboundDeps,
-      types: [],
-    };
-
-    setNodeDetail(initialDetail);
-    setIsDrawerOpen(true);
-    setIsDetailLoading(true);
-
-    // 3. Resolve the detail file path
-    // Handles both flat filenames ("1000_Planning.json") and paths already starting with "Dlls/"
-    let chunkPath = dllMeta.detailFile || `${dllMeta.id}_${dllMeta.name}.json`;
-    if (!chunkPath.startsWith('Dlls/') && !chunkPath.startsWith('/')) {
-      chunkPath = `Dlls/${chunkPath}`;
-    }
-
-    const detailUrl = `/data/${selectedSuite}/${chunkPath}`;
-    let isSubscribed = true;
-
-    fetch(detailUrl)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then((payload: Partial<DllDetailPayload>) => {
-        if (!isSubscribed) return;
-
-        setNodeDetail((prev) => {
-          if (!prev) return null;
-          return {
-            ...prev,
-            version: payload.version || prev.version,
-            architecture: payload.architecture || prev.architecture,
-            totalTypes: payload.totalTypes || payload.types?.length || 0,
-            dependencies: payload.dependencies && payload.dependencies.length > 0
-              ? payload.dependencies
-              : prev.dependencies,
-            types: payload.types || [],
-          };
-        });
-        setIsDetailLoading(false);
-      })
-      .catch(() => {
-        // Silent recovery: Master metadata is already visible
-        if (isSubscribed) {
-          setIsDetailLoading(false);
-        }
+    if (!data || !selectedDll || !initialDetail || !detailKey) return;
+    const ctrl = new AbortController();
+    fetchJson<RawDllDetail>(resolveDetailUrl(selectedSuite, selectedDll), ctrl.signal)
+      .then((raw) => setFetched({ key: detailKey, detail: mapDllDetail(raw, initialDetail, data) }))
+      .catch((err: Error) => {
+        if (err.name !== "AbortError") setFetched({ key: detailKey, detail: null });
       });
+    return () => ctrl.abort();
+  }, [data, selectedDll, initialDetail, detailKey, selectedSuite]);
 
-    return () => {
-      isSubscribed = false;
-    };
-  }, [selectedNode, data, selectedSuite]);
+  const isDetailLoading = !!detailKey && fetched?.key !== detailKey;
+  const nodeDetail = fetched?.key === detailKey && fetched?.detail ? fetched.detail : initialDetail;
 
-  // Search options
-  const searchOptions = useMemo<SearchOption[]>(() => {
-    if (!data) return [];
-    return data.dlls.map((dll) => ({
-      id: String(dll.id),
-      label: `${dll.name} (#${dll.id})`,
-    }));
-  }, [data]);
-
-  const stats = useMemo(() => {
-    if (!data) return undefined;
-    return {
-      nodesCount: data.dlls.length,
-      edgesCount: data.dllEdges.length,
-    };
-  }, [data]);
+  const searchOptions = useMemo(() => buildSearchOptions(data), [data]);
+  const stats = useMemo(() => getGraphStats(data), [data]);
 
   const handleNodeClick = useCallback((nodeId: string | null) => {
     setSelectedNode(nodeId);
-    if (!nodeId) {
-      setIsDrawerOpen(false);
-    }
   }, []);
 
-  const handleCloseDrawer = useCallback(() => {
-    setIsDrawerOpen(false);
-    setSelectedNode(null);
+  const handleSearchSelect = useCallback((nodeId: string) => {
+    setPage("graph");
+    setSelectedNode(nodeId);
   }, []);
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100vh', overflow: 'hidden' }}>
-      {/* Loading Overlay */}
-      {isLoading && (
-        <Loader
-          message={`Loading ${selectedSuite}...`}
-          subMessage="Fetching dependency indices and generating 3D instances"
-        />
-      )}
-
-      {/* Navbar Header */}
+    <Box sx={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
       <Navbar
+        page={page}
+        onPageChange={setPage}
         currentSuite={selectedSuite}
         onSuiteChange={handleSuiteChange}
         options={searchOptions}
-        onSelectNode={handleNodeClick}
+        onSelectNode={handleSearchSelect}
         stats={stats}
       />
 
-      {/* Three.js 3D WebGL Canvas */}
-      <ThreeGraphCanvas
-        data={data}
-        selectedNodeId={selectedNode}
-        onNodeClick={handleNodeClick}
-      />
+      <Box sx={{ flex: 1, position: "relative", minHeight: 0 }}>
+        {page === "graph" ? (
+          <Fade in key="graph" timeout={400}>
+            <Box sx={{ position: "absolute", inset: 0 }}>
+              <ThreeGraphCanvas data={data} selectedNodeId={selectedNode} onNodeClick={handleNodeClick} />
+              <Loader
+                open={isLoading}
+                message={`Loading ${selectedSuite}...`}
+                subMessage="Fetching dependency indices and generating 3D instances"
+              />
+            </Box>
+          </Fade>
+        ) : (
+          <Fade in key="audit" timeout={400}>
+            <Box sx={{ position: "absolute", inset: 0 }}>
+              <AuditPage />
+            </Box>
+          </Fade>
+        )}
+      </Box>
 
-      {/* Right Slide-out Detail Drawer */}
       <DetailDrawer
-        isOpen={isDrawerOpen}
-        onClose={handleCloseDrawer}
+        isOpen={page === "graph" && !!selectedNode}
+        onClose={() => setSelectedNode(null)}
         detail={nodeDetail}
         isLoading={isDetailLoading}
         onJumpToNode={handleNodeClick}
       />
-    </div>
+    </Box>
   );
 };
 

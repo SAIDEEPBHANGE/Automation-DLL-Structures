@@ -1,212 +1,172 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState } from "react";
+import {
+  AppBar,
+  Autocomplete,
+  Box,
+  Button,
+  Chip,
+  createFilterOptions,
+  IconButton,
+  ListItemIcon,
+  ListItemText,
+  Menu,
+  MenuItem,
+  Select,
+  TextField,
+  Toolbar,
+  Typography,
+  useMediaQuery,
+} from "@mui/material";
+import { useTheme } from "@mui/material/styles";
+import MenuIcon from "@mui/icons-material/Menu";
+import HubIcon from "@mui/icons-material/Hub";
+import FactCheckIcon from "@mui/icons-material/FactCheck";
+import { NAV_HEIGHT } from "../theme";
+import type { SearchOption, Suite } from "../utils/graphUtils";
 
-export interface SearchOption {
-  id: string;
-  label: string;
-}
+export type Page = "graph" | "audit";
 
 interface NavbarProps {
-  currentSuite: 'SmartPlant3D' | 'SmartPlantPID';
-  onSuiteChange: (suite: 'SmartPlant3D' | 'SmartPlantPID') => void;
+  page: Page;
+  onPageChange: (page: Page) => void;
+  currentSuite: Suite;
+  onSuiteChange: (suite: Suite) => void;
   options: SearchOption[];
   onSelectNode: (nodeId: string) => void;
-  stats?: {
-    nodesCount: number;
-    edgesCount: number;
-  };
+  stats?: { nodesCount: number; edgesCount: number };
 }
 
+const filterOptions = createFilterOptions<SearchOption>({ limit: 12 });
+
 export const Navbar: React.FC<NavbarProps> = ({
+  page,
+  onPageChange,
   currentSuite,
   onSuiteChange,
   options,
   onSelectNode,
-  stats
+  stats,
 }) => {
-  const [query, setQuery] = useState('');
-  const [isOpen, setIsOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const showStats = useMediaQuery(theme.breakpoints.up("lg"));
+  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
 
-  // Filter options based on user typing (matches label or numeric ID)
-  const filteredOptions = query.trim() === ''
-    ? []
-    : options
-        .filter(
-          (opt) =>
-            opt.label.toLowerCase().includes(query.toLowerCase()) ||
-            opt.id.includes(query.trim())
-        )
-        .slice(0, 12);
-
-  // Close dropdown menu if user clicks outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  const suiteSelect = (
+    <Select
+      size="small"
+      value={currentSuite}
+      onChange={(e) => onSuiteChange(e.target.value as Suite)}
+      sx={{ minWidth: 150 }}
+    >
+      <MenuItem value="SmartPlant3D">SmartPlant 3D</MenuItem>
+      <MenuItem value="SmartPlantPID">SmartPlant P&amp;ID</MenuItem>
+    </Select>
+  );
 
   return (
-    <header
-      style={{
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        height: '60px',
-        backgroundColor: 'rgba(15, 23, 42, 0.92)',
-        backdropFilter: 'blur(8px)',
-        borderBottom: '1px solid #334155',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '0 24px',
-        zIndex: 100,
-        color: '#f8fafc',
-        boxSizing: 'border-box'
-      }}
+    <AppBar
+      position="static"
+      color="default"
+      elevation={0}
+      sx={{ bgcolor: "rgba(15, 23, 42, 0.95)", borderBottom: 1, borderColor: "divider", zIndex: 1200 }}
     >
-      {/* Left: Title & Live Stats */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-        <h1
-          style={{
-            margin: 0,
-            fontSize: '18px',
-            fontWeight: 700,
-            letterSpacing: '0.5px',
-            color: '#38bdf8',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px'
-          }}
-        >
-          <span>Off-Shore</span>
-          <span style={{ fontSize: '13px', color: '#94a3b8', fontWeight: 400 }}>
+      <Toolbar sx={{ minHeight: NAV_HEIGHT, gap: 1.5 }}>
+        <Typography variant="h6" noWrap sx={{ color: "primary.main", fontWeight: 700 }}>
+          Off-Shore
+          <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 1, display: { xs: "none", sm: "inline" } }}>
             Architecture Auditor
-          </span>
-        </h1>
+          </Typography>
+        </Typography>
 
-        {stats && (
-          <div
-            style={{
-              display: 'flex',
-              gap: '10px',
-              fontSize: '12px',
-              color: '#64748b',
-              borderLeft: '1px solid #334155',
-              paddingLeft: '16px'
-            }}
-          >
-            <span>
-              <strong style={{ color: '#cbd5e1' }}>{stats.nodesCount.toLocaleString()}</strong> DLLs
-            </span>
-            <span>•</span>
-            <span>
-              <strong style={{ color: '#cbd5e1' }}>{stats.edgesCount.toLocaleString()}</strong> Edges
-            </span>
-          </div>
+        {showStats && stats && (
+          <Box sx={{ display: "flex", gap: 1, ml: 1 }}>
+            <Chip size="small" variant="outlined" label={`${stats.nodesCount.toLocaleString()} DLLs`} />
+            <Chip size="small" variant="outlined" label={`${stats.edgesCount.toLocaleString()} Edges`} />
+          </Box>
         )}
-      </div>
 
-      {/* Right: Suite Selector & Search Input */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-        {/* Suite Dropdown */}
-        <select
-          value={currentSuite}
-          onChange={(e) => onSuiteChange(e.target.value as 'SmartPlant3D' | 'SmartPlantPID')}
-          style={{
-            padding: '8px 12px',
-            backgroundColor: '#1e293b',
-            color: '#f8fafc',
-            border: '1px solid #475569',
-            borderRadius: '6px',
-            fontSize: '13px',
-            fontWeight: 500,
-            cursor: 'pointer',
-            outline: 'none'
-          }}
-        >
-          <option value="SmartPlant3D">SmartPlant 3D</option>
-          <option value="SmartPlantPID">SmartPlant P&ID</option>
-        </select>
-
-        {/* Search Bar with Autocomplete Dropdown */}
-        <div ref={containerRef} style={{ position: 'relative', width: '320px' }}>
-          <input
-            type="text"
-            placeholder="Search DLL by name or ID..."
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              setIsOpen(true);
-            }}
-            onFocus={() => setIsOpen(true)}
-            style={{
-              width: '100%',
-              padding: '8px 14px',
-              backgroundColor: '#1e293b',
-              color: '#f8fafc',
-              border: '1px solid #475569',
-              borderRadius: '6px',
-              fontSize: '13px',
-              outline: 'none',
-              boxSizing: 'border-box'
-            }}
-          />
-
-          {isOpen && filteredOptions.length > 0 && (
-            <ul
-              style={{
-                position: 'absolute',
-                top: 'calc(100% + 6px)',
-                left: 0,
-                right: 0,
-                backgroundColor: '#1e293b',
-                border: '1px solid #334155',
-                borderRadius: '6px',
-                boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)',
-                margin: 0,
-                padding: '4px 0',
-                listStyle: 'none',
-                maxHeight: '280px',
-                overflowY: 'auto',
-                zIndex: 200
-              }}
+        {!isMobile && (
+          <Box sx={{ display: "flex", gap: 1, ml: 2 }}>
+            <Button
+              startIcon={<HubIcon />}
+              color={page === "graph" ? "primary" : "inherit"}
+              variant={page === "graph" ? "outlined" : "text"}
+              onClick={() => onPageChange("graph")}
             >
-              {filteredOptions.map((opt) => (
-                <li
-                  key={opt.id}
+              Graph
+            </Button>
+            <Button
+              startIcon={<FactCheckIcon />}
+              color={page === "audit" ? "primary" : "inherit"}
+              variant={page === "audit" ? "outlined" : "text"}
+              onClick={() => onPageChange("audit")}
+            >
+              Audit
+            </Button>
+          </Box>
+        )}
+
+        <Box sx={{ flexGrow: 1 }} />
+
+        {!isMobile && suiteSelect}
+
+        <Autocomplete
+          size="small"
+          options={options}
+          value={null}
+          blurOnSelect
+          filterOptions={filterOptions}
+          getOptionLabel={(o) => o.label}
+          isOptionEqualToValue={(a, b) => a.id === b.id}
+          onChange={(_, opt) => opt && onSelectNode(opt.id)}
+          noOptionsText="No matching DLL"
+          sx={{ width: { xs: "100%", sm: 260, lg: 320 }, maxWidth: { xs: 220, sm: "none" } }}
+          renderInput={(params) => <TextField {...params} placeholder="Search DLL by name or ID..." />}
+        />
+
+        {isMobile && (
+          <>
+            <IconButton color="inherit" onClick={(e) => setMenuAnchor(e.currentTarget)} aria-label="Open menu">
+              <MenuIcon />
+            </IconButton>
+            <Menu anchorEl={menuAnchor} open={!!menuAnchor} onClose={() => setMenuAnchor(null)}>
+              <MenuItem
+                selected={page === "graph"}
+                onClick={() => {
+                  onPageChange("graph");
+                  setMenuAnchor(null);
+                }}
+              >
+                <ListItemIcon><HubIcon fontSize="small" /></ListItemIcon>
+                <ListItemText>Graph</ListItemText>
+              </MenuItem>
+              <MenuItem
+                selected={page === "audit"}
+                onClick={() => {
+                  onPageChange("audit");
+                  setMenuAnchor(null);
+                }}
+              >
+                <ListItemIcon><FactCheckIcon fontSize="small" /></ListItemIcon>
+                <ListItemText>Audit</ListItemText>
+              </MenuItem>
+              {(["SmartPlant3D", "SmartPlantPID"] as Suite[]).map((s) => (
+                <MenuItem
+                  key={s}
+                  selected={s === currentSuite}
                   onClick={() => {
-                    onSelectNode(opt.id);
-                    setQuery(opt.label);
-                    setIsOpen(false);
+                    onSuiteChange(s);
+                    setMenuAnchor(null);
                   }}
-                  style={{
-                    padding: '8px 14px',
-                    cursor: 'pointer',
-                    fontSize: '13px',
-                    color: '#e2e8f0',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    borderBottom: '1px solid #283548'
-                  }}
-                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#334155')}
-                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
                 >
-                  <span style={{ fontWeight: 500 }}>{opt.label}</span>
-                  <span style={{ fontSize: '11px', color: '#64748b', marginLeft: '8px' }}>
-                    #{opt.id}
-                  </span>
-                </li>
+                  <ListItemText inset>{s === "SmartPlant3D" ? "SmartPlant 3D" : "SmartPlant P&ID"}</ListItemText>
+                </MenuItem>
               ))}
-            </ul>
-          )}
-        </div>
-      </div>
-    </header>
+            </Menu>
+          </>
+        )}
+      </Toolbar>
+    </AppBar>
   );
 };

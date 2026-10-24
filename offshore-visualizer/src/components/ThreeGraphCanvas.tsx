@@ -1,7 +1,21 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { Box, Paper, Typography } from "@mui/material";
 import type { MasterGraphPayload } from "../types/graph";
+import { buildAdjacency } from "../utils/graphUtils";
+import { isVendorDll } from "../utils/dllClassifier";
+import { prefersReducedMotion } from "../utils/motion";
+import {
+  COLORS,
+  IdLabelPool,
+  NODE_RADIUS,
+  computeBaseRadius,
+  computeFramingDistance,
+  createLabelSprite,
+  easeInOutCubic,
+  fibonacciSpherePosition,
+} from "../utils/threeUtils";
 
 interface ThreeGraphCanvasProps {
   data: MasterGraphPayload | null;
@@ -9,67 +23,17 @@ interface ThreeGraphCanvasProps {
   onNodeClick: (nodeId: string | null) => void;
 }
 
-// Generates an auto-facing billboard text badge
-function createLabelSprite(text: string, isFocal: boolean): THREE.Sprite {
-  const canvas = document.createElement("canvas");
-  const ctx = canvas.getContext("2d");
-
-  canvas.width = 512;
-  canvas.height = 128;
-
-  if (ctx) {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // High-contrast badge background
-    ctx.fillStyle = isFocal
-      ? "rgba(245, 158, 11, 0.95)"
-      : "rgba(15, 23, 42, 0.92)";
-    const radius = 24;
-    const x = 16;
-    const y = 16;
-    const w = canvas.width - 32;
-    const h = canvas.height - 32;
-
-    ctx.beginPath();
-    ctx.moveTo(x + radius, y);
-    ctx.lineTo(x + w - radius, y);
-    ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
-    ctx.lineTo(x + w, y + h - radius);
-    ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
-    ctx.lineTo(x + radius, y + h);
-    ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
-    ctx.lineTo(x, y + radius);
-    ctx.quadraticCurveTo(x, y, x + radius, y);
-    ctx.closePath();
-    ctx.fill();
-
-    ctx.lineWidth = 6;
-    ctx.strokeStyle = isFocal ? "#ffffff" : "#38bdf8";
-    ctx.stroke();
-
-    ctx.fillStyle = isFocal ? "#000000" : "#ffffff";
-    ctx.font = 'bold 38px "Segoe UI", sans-serif';
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(text, canvas.width / 2, canvas.height / 2);
-  }
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.needsUpdate = true; // REQUIRED for CanvasTexture
-
-  const spriteMaterial = new THREE.SpriteMaterial({
-    map: texture,
-    transparent: true,
-    depthTest: false,
-    depthWrite: false,
-  });
-
-  const sprite = new THREE.Sprite(spriteMaterial);
-  // Scale enlarged from (160, 40) to (500, 125) to remain visible at world distances
-  sprite.scale.set(isFocal ? 600 : 450, isFocal ? 150 : 112, 1);
-  sprite.renderOrder = 999;
-  return sprite;
+interface CameraTween {
+  start: number;
+  duration: number;
+  fromPos: THREE.Vector3;
+  toPos: THREE.Vector3;
+  fromTarget: THREE.Vector3;
+  toTarget: THREE.Vector3;
 }
+
+const FOCUS_DISTANCE = 450;
+const TWEEN_MS = 700;
 
 export const ThreeGraphCanvas: React.FC<ThreeGraphCanvasProps> = ({
   data,
@@ -79,107 +43,201 @@ export const ThreeGraphCanvas: React.FC<ThreeGraphCanvasProps> = ({
   const mountRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
-  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
   const instancedMeshRef = useRef<THREE.InstancedMesh | null>(null);
   const lineMeshRef = useRef<THREE.LineSegments | null>(null);
+  const badgeGroupRef = useRef<THREE.Group | null>(null);
+  const idPoolRef = useRef<IdLabelPool | null>(null);
+  const onNodeClickRef = useRef(onNodeClick);
 
-  // Group container holding active label sprites
-  const labelGroupRef = useRef<THREE.Group | null>(null);
-
-  // Quick lookups
-  const nodePositionsRef = useRef<Map<number, THREE.Vector3>>(new Map());
-  const adjacencyRef = useRef<Map<number, Set<number>>>(new Map());
-  const idToIndexRef = useRef<Map<number, number>>(new Map());
+  const positionsRef = useRef<THREE.Vector3[]>([]);
   const indexToIdRef = useRef<number[]>([]);
+  const idToIndexRef = useRef<Map<number, number>>(new Map());
   const idToNameRef = useRef<Map<number, string>>(new Map());
+  const adjacencyRef = useRef<Map<number, Set<number>>>(new Map());
+  const edgesRef = useRef<Array<[number, number]>>([]);
+  const overviewRef = useRef<{ pos: THREE.Vector3; target: THREE.Vector3 } | null>(null);
 
-  // 1. Scene, Camera, WebGLRenderer, Controls, Raycaster
+  const curScaleRef = useRef<Float32Array>(new Float32Array(0));
+  const targetScaleRef = useRef<Float32Array>(new Float32Array(0));
+  const radiiRef = useRef<Float32Array>(new Float32Array(0));
+  const focalIndexRef = useRef<number>(-1);
+  const tweenRef = useRef<CameraTween | null>(null);
+  const hadSelectionRef = useRef(false);
+
+  const [hover, setHover] = useState<{ x: number; y: number; label: string } | null>(null);
+
   useEffect(() => {
-    if (!mountRef.current) return;
+    onNodeClickRef.current = onNodeClick;
+  }, [onNodeClick]);
+
+  // 1. Scene, renderer, controls, interaction, animation loop
+  useEffect(() => {
     const container = mountRef.current;
-    const width = container.clientWidth || window.innerWidth;
-    const height = container.clientHeight || window.innerHeight;
+    if (!container) return;
+    const width = container.clientWidth || 1;
+    const height = container.clientHeight || 1;
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x090d16);
     sceneRef.current = scene;
 
-    const labelGroup = new THREE.Group();
-    scene.add(labelGroup);
-    labelGroupRef.current = labelGroup;
+    const badgeGroup = new THREE.Group();
+    const idGroup = new THREE.Group();
+    scene.add(badgeGroup, idGroup);
+    badgeGroupRef.current = badgeGroup;
+    const idPool = new IdLabelPool(idGroup);
+    idPoolRef.current = idPool;
 
     const camera = new THREE.PerspectiveCamera(50, width / height, 10, 100000);
     cameraRef.current = camera;
 
-    const renderer = new THREE.WebGLRenderer({
-      antialias: true,
-      powerPreference: "high-performance",
-    });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     container.appendChild(renderer.domElement);
-    rendererRef.current = renderer;
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
     controlsRef.current = controls;
 
-    const ambientLight = new THREE.AmbientLight(0xffffff, 1.2);
-    scene.add(ambientLight);
+    scene.add(new THREE.AmbientLight(0xffffff, 1.2));
 
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
-
-    const handleClick = (event: MouseEvent) => {
-      if (!renderer.domElement || !instancedMeshRef.current) return;
+    const pickIndex = (clientX: number, clientY: number): number | null => {
+      const mesh = instancedMeshRef.current;
+      if (!mesh) return null;
       const rect = renderer.domElement.getBoundingClientRect();
-      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
+      mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
       raycaster.setFromCamera(mouse, camera);
-      const intersects = raycaster.intersectObject(instancedMeshRef.current);
-
-      if (intersects.length > 0 && intersects[0].instanceId !== undefined) {
-        const clickedId = indexToIdRef.current[intersects[0].instanceId];
-        onNodeClick(String(clickedId));
-      } else {
-        onNodeClick(null);
-      }
+      const hit = raycaster.intersectObject(mesh)[0];
+      return hit?.instanceId ?? null;
     };
 
-    renderer.domElement.addEventListener("click", handleClick);
+    let downX = 0;
+    let downY = 0;
+    const onPointerDown = (e: PointerEvent) => {
+      downX = e.clientX;
+      downY = e.clientY;
+    };
+    const onClick = (e: MouseEvent) => {
+      // Ignore orbit drags
+      if (Math.hypot(e.clientX - downX, e.clientY - downY) > 5) return;
+      const idx = pickIndex(e.clientX, e.clientY);
+      onNodeClickRef.current(idx === null ? null : String(indexToIdRef.current[idx]));
+    };
 
-    let animationFrameId: number;
+    let lastMove = 0;
+    let lastHoverId = -1;
+    const onPointerMove = (e: PointerEvent) => {
+      if (e.pointerType === "touch" || e.buttons !== 0) return;
+      const now = performance.now();
+      if (now - lastMove < 60) return;
+      lastMove = now;
+      const idx = pickIndex(e.clientX, e.clientY);
+      const id = idx === null ? -1 : indexToIdRef.current[idx];
+      if (id === lastHoverId) return;
+      lastHoverId = id;
+      renderer.domElement.style.cursor = id === -1 ? "grab" : "pointer";
+      const rect = container.getBoundingClientRect();
+      setHover(
+        id === -1
+          ? null
+          : {
+              x: e.clientX - rect.left,
+              y: e.clientY - rect.top,
+              label: `${idToNameRef.current.get(id) ?? "DLL"} (#${id})`,
+            },
+      );
+    };
+    const onPointerLeave = () => {
+      lastHoverId = -1;
+      setHover(null);
+    };
+
+    renderer.domElement.addEventListener("pointerdown", onPointerDown);
+    renderer.domElement.addEventListener("click", onClick);
+    renderer.domElement.addEventListener("pointermove", onPointerMove);
+    renderer.domElement.addEventListener("pointerleave", onPointerLeave);
+
+    const dummy = new THREE.Object3D();
+    let raf = 0;
+    let frame = 0;
     const animate = () => {
-      animationFrameId = requestAnimationFrame(animate);
+      raf = requestAnimationFrame(animate);
+      const now = performance.now();
+      const reduced = prefersReducedMotion();
+
+      const tween = tweenRef.current;
+      if (tween) {
+        const t = Math.min(1, (now - tween.start) / tween.duration);
+        const k = easeInOutCubic(t);
+        camera.position.lerpVectors(tween.fromPos, tween.toPos, k);
+        controls.target.lerpVectors(tween.fromTarget, tween.toTarget, k);
+        if (t >= 1) tweenRef.current = null;
+      }
+
+      const mesh = instancedMeshRef.current;
+      if (mesh) {
+        const cur = curScaleRef.current;
+        const target = targetScaleRef.current;
+        const radii = radiiRef.current;
+        const focal = focalIndexRef.current;
+        let dirty = false;
+        for (let i = 0; i < cur.length; i++) {
+          let goal = target[i];
+          if (i === focal && !reduced) goal *= 1 + 0.1 * Math.sin(now / 280);
+          const diff = goal - cur[i];
+          if (Math.abs(diff) > 0.0005) {
+            cur[i] = reduced ? goal : cur[i] + diff * 0.18;
+            dummy.position.copy(positionsRef.current[i]);
+            dummy.scale.setScalar(cur[i]);
+            dummy.updateMatrix();
+            mesh.setMatrixAt(i, dummy.matrix);
+            radii[i] = NODE_RADIUS * cur[i];
+            dirty = true;
+          }
+        }
+        if (dirty) mesh.instanceMatrix.needsUpdate = true;
+        if (frame % 3 === 0) {
+          idPool.update(camera, indexToIdRef.current, positionsRef.current, radii);
+        }
+      }
+
+      frame++;
       controls.update();
       renderer.render(scene, camera);
     };
     animate();
 
-    const handleResize = () => {
-      if (!mountRef.current || !rendererRef.current || !cameraRef.current)
-        return;
-      const w = mountRef.current.clientWidth;
-      const h = mountRef.current.clientHeight;
-      cameraRef.current.aspect = w / h;
-      cameraRef.current.updateProjectionMatrix();
-      rendererRef.current.setSize(w, h);
-    };
-    window.addEventListener("resize", handleResize);
+    const observer = new ResizeObserver(() => {
+      const w = container.clientWidth;
+      const h = container.clientHeight;
+      if (w === 0 || h === 0) return;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+    });
+    observer.observe(container);
 
     return () => {
-      cancelAnimationFrame(animationFrameId);
-      window.removeEventListener("resize", handleResize);
-      renderer.domElement.removeEventListener("click", handleClick);
+      cancelAnimationFrame(raf);
+      observer.disconnect();
+      renderer.domElement.removeEventListener("pointerdown", onPointerDown);
+      renderer.domElement.removeEventListener("click", onClick);
+      renderer.domElement.removeEventListener("pointermove", onPointerMove);
+      renderer.domElement.removeEventListener("pointerleave", onPointerLeave);
+      idPool.dispose();
+      controls.dispose();
       renderer.dispose();
-      if (container) container.innerHTML = "";
+      if (renderer.domElement.parentNode === container) container.removeChild(renderer.domElement);
     };
-  }, [onNodeClick]);
+  }, []);
 
-  // 2. Build Geometries & Instanced Mesh
+  // 2. Build instanced bubbles and edges
   useEffect(() => {
     const scene = sceneRef.current;
     const camera = cameraRef.current;
@@ -189,229 +247,209 @@ export const ThreeGraphCanvas: React.FC<ThreeGraphCanvasProps> = ({
     if (instancedMeshRef.current) {
       scene.remove(instancedMeshRef.current);
       instancedMeshRef.current.geometry.dispose();
+      (instancedMeshRef.current.material as THREE.Material).dispose();
+      instancedMeshRef.current.dispose();
       instancedMeshRef.current = null;
     }
     if (lineMeshRef.current) {
       scene.remove(lineMeshRef.current);
       lineMeshRef.current.geometry.dispose();
+      (lineMeshRef.current.material as THREE.Material).dispose();
       lineMeshRef.current = null;
     }
 
-    const totalNodes = data.dlls.length;
-    const nodePositions = new Map<number, THREE.Vector3>();
-    const adjacency = new Map<number, Set<number>>();
-    const idToIndex = new Map<number, number>();
+    const total = data.dlls.length;
+    const baseRadius = computeBaseRadius(total);
+    const positions: THREE.Vector3[] = [];
     const indexToId: number[] = [];
+    const idToIndex = new Map<number, number>();
     const idToName = new Map<number, string>();
 
-    const phi = Math.PI * (3 - Math.sqrt(5));
-    const baseRadius = Math.max(1200, Math.sqrt(totalNodes) * 65);
-
     data.dlls.forEach((dll, idx) => {
-      idToIndex.set(dll.id, idx);
+      positions.push(fibonacciSpherePosition(idx, total, baseRadius));
       indexToId.push(dll.id);
+      idToIndex.set(dll.id, idx);
       idToName.set(dll.id, dll.name);
-      adjacency.set(dll.id, new Set());
-
-      const y = 1 - (idx / (totalNodes - 1 || 1)) * 2;
-      const radiusAtY = Math.sqrt(Math.max(0, 1 - y * y));
-      const theta = phi * idx;
-
-      const pos = new THREE.Vector3(
-        Math.cos(theta) * radiusAtY * baseRadius,
-        y * baseRadius,
-        Math.sin(theta) * radiusAtY * baseRadius,
-      );
-      nodePositions.set(dll.id, pos);
     });
 
-    nodePositionsRef.current = nodePositions;
-    adjacencyRef.current = adjacency;
-    idToIndexRef.current = idToIndex;
+    positionsRef.current = positions;
     indexToIdRef.current = indexToId;
+    idToIndexRef.current = idToIndex;
     idToNameRef.current = idToName;
+    adjacencyRef.current = buildAdjacency(data);
+    curScaleRef.current = new Float32Array(total).fill(1);
+    targetScaleRef.current = new Float32Array(total).fill(1);
+    radiiRef.current = new Float32Array(total).fill(NODE_RADIUS);
+    focalIndexRef.current = -1;
+    hadSelectionRef.current = false;
+    tweenRef.current = null;
 
-    const sphereGeo = new THREE.SphereGeometry(12, 16, 16);
-    const sphereMat = new THREE.MeshBasicMaterial();
-    const instancedMesh = new THREE.InstancedMesh(
-      sphereGeo,
-      sphereMat,
-      totalNodes,
+    const mesh = new THREE.InstancedMesh(
+      new THREE.SphereGeometry(NODE_RADIUS, 16, 16),
+      new THREE.MeshBasicMaterial(),
+      total,
     );
-
     const dummy = new THREE.Object3D();
-    const defaultColor = new THREE.Color(0x3b82f6);
-    const vendorColor = new THREE.Color(0x334155);
-
     data.dlls.forEach((dll, idx) => {
-      const pos = nodePositions.get(dll.id)!;
-      dummy.position.copy(pos);
+      dummy.position.copy(positions[idx]);
       dummy.updateMatrix();
-      instancedMesh.setMatrixAt(idx, dummy.matrix);
-
-      const isVendor =
-        dll.name.startsWith("Microsoft.") ||
-        dll.name.startsWith("Telerik.") ||
-        dll.name.startsWith("CefSharp.") ||
-        dll.name.startsWith("Xceed.");
-
-      instancedMesh.setColorAt(idx, isVendor ? vendorColor : defaultColor);
+      mesh.setMatrixAt(idx, dummy.matrix);
+      mesh.setColorAt(idx, isVendorDll(dll.name) ? COLORS.vendor : COLORS.normal);
     });
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    scene.add(mesh);
+    instancedMeshRef.current = mesh;
 
-    instancedMesh.instanceMatrix.needsUpdate = true;
-    if (instancedMesh.instanceColor)
-      instancedMesh.instanceColor.needsUpdate = true;
-    scene.add(instancedMesh);
-    instancedMeshRef.current = instancedMesh;
-
-    // Build Lines
     const linePositions: number[] = [];
     const lineColors: number[] = [];
-
+    const edges: Array<[number, number]> = [];
     data.dllEdges.forEach((edge) => {
-      const p1 = nodePositions.get(edge.s);
-      const p2 = nodePositions.get(edge.t);
-
-      if (p1 && p2) {
-        adjacency.get(edge.s)?.add(edge.t);
-        adjacency.get(edge.t)?.add(edge.s);
-
-        linePositions.push(p1.x, p1.y, p1.z);
-        linePositions.push(p2.x, p2.y, p2.z);
-
-        lineColors.push(0.08, 0.12, 0.22);
-        lineColors.push(0.08, 0.12, 0.22);
-      }
+      const a = idToIndex.get(edge.s);
+      const b = idToIndex.get(edge.t);
+      if (a === undefined || b === undefined) return;
+      const p1 = positions[a];
+      const p2 = positions[b];
+      linePositions.push(p1.x, p1.y, p1.z, p2.x, p2.y, p2.z);
+      const c = COLORS.edgeDefault;
+      lineColors.push(c.r, c.g, c.b, c.r, c.g, c.b);
+      edges.push([edge.s, edge.t]);
     });
+    edgesRef.current = edges;
 
     const lineGeometry = new THREE.BufferGeometry();
-    lineGeometry.setAttribute(
-      "position",
-      new THREE.Float32BufferAttribute(linePositions, 3),
+    lineGeometry.setAttribute("position", new THREE.Float32BufferAttribute(linePositions, 3));
+    lineGeometry.setAttribute("color", new THREE.Float32BufferAttribute(lineColors, 3));
+    const lines = new THREE.LineSegments(
+      lineGeometry,
+      new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.35 }),
     );
-    lineGeometry.setAttribute(
-      "color",
-      new THREE.Float32BufferAttribute(lineColors, 3),
-    );
+    scene.add(lines);
+    lineMeshRef.current = lines;
 
-    const lineMaterial = new THREE.LineBasicMaterial({
-      vertexColors: true,
-      transparent: true,
-      opacity: 0.35,
-    });
-
-    const lineMesh = new THREE.LineSegments(lineGeometry, lineMaterial);
-    scene.add(lineMesh);
-    lineMeshRef.current = lineMesh;
-
-    // Framing
-    const fovInRadians = (camera.fov * Math.PI) / 180;
-    const requiredDistance = (baseRadius / Math.sin(fovInRadians / 2)) * 1.35;
-
-    camera.position.set(0, 0, requiredDistance);
+    const distance = computeFramingDistance(baseRadius, camera.fov, camera.aspect);
+    camera.position.set(0, 0, distance);
     controls.target.set(0, 0, 0);
     controls.minDistance = 50;
-    controls.maxDistance = requiredDistance * 3;
+    controls.maxDistance = distance * 3;
     controls.update();
+    overviewRef.current = { pos: camera.position.clone(), target: new THREE.Vector3() };
   }, [data]);
 
-  // 3. Highlight Colors, Render Billboard Sprites & Animate Camera
+  // 3. Selection: colors, scales, edges, name badges, camera fly-to
   useEffect(() => {
-    const instancedMesh = instancedMeshRef.current;
-    const labelGroup = labelGroupRef.current;
-    if (!instancedMesh || !labelGroup || !data) return;
+    const mesh = instancedMeshRef.current;
+    const badgeGroup = badgeGroupRef.current;
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    if (!mesh || !badgeGroup || !camera || !controls || !data) return;
 
-    // Clear existing billboard labels
-    while (labelGroup.children.length > 0) {
-      const child = labelGroup.children[0] as THREE.Sprite;
-      if (child.material) {
-        if (child.material.map) child.material.map.dispose();
-        child.material.dispose();
-      }
-      labelGroup.remove(child);
+    while (badgeGroup.children.length > 0) {
+      const child = badgeGroup.children[0] as THREE.Sprite;
+      child.material.map?.dispose();
+      child.material.dispose();
+      badgeGroup.remove(child);
     }
 
     const idNum = selectedNodeId ? parseInt(selectedNodeId, 10) : null;
-    const neighbors = idNum ? adjacencyRef.current.get(idNum) : null;
+    const neighbors = idNum !== null ? adjacencyRef.current.get(idNum) : undefined;
+    const target = targetScaleRef.current;
 
-    const selectedColor = new THREE.Color(0xf59e0b); // Amber
-    const neighborColor = new THREE.Color(0x38bdf8); // Sky blue
-    const dimmedColor = new THREE.Color(0x111827); // Dimmed dark
-    const defaultColor = new THREE.Color(0x3b82f6); // Normal blue
-    const vendorColor = new THREE.Color(0x334155);
-
-    // Update instance colors
     data.dlls.forEach((dll, idx) => {
-      if (!idNum) {
-        const isVendor =
-          dll.name.startsWith("Microsoft.") ||
-          dll.name.startsWith("Telerik.") ||
-          dll.name.startsWith("CefSharp.") ||
-          dll.name.startsWith("Xceed.");
-        instancedMesh.setColorAt(idx, isVendor ? vendorColor : defaultColor);
+      if (idNum === null) {
+        mesh.setColorAt(idx, isVendorDll(dll.name) ? COLORS.vendor : COLORS.normal);
+        target[idx] = 1;
       } else if (dll.id === idNum) {
-        instancedMesh.setColorAt(idx, selectedColor);
-      } else if (neighbors && neighbors.has(dll.id)) {
-        instancedMesh.setColorAt(idx, neighborColor);
+        mesh.setColorAt(idx, COLORS.selected);
+        target[idx] = 2;
+      } else if (neighbors?.has(dll.id)) {
+        mesh.setColorAt(idx, COLORS.neighbor);
+        target[idx] = 1.4;
       } else {
-        instancedMesh.setColorAt(idx, dimmedColor);
+        mesh.setColorAt(idx, COLORS.dimmed);
+        target[idx] = 1;
       }
     });
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    focalIndexRef.current = idNum !== null ? (idToIndexRef.current.get(idNum) ?? -1) : -1;
 
-    if (instancedMesh.instanceColor) {
-      instancedMesh.instanceColor.needsUpdate = true;
+    const lines = lineMeshRef.current;
+    const colorAttr = lines?.geometry.getAttribute("color") as THREE.BufferAttribute | undefined;
+    if (colorAttr) {
+      edgesRef.current.forEach(([s, t], k) => {
+        const c =
+          idNum === null
+            ? COLORS.edgeDefault
+            : s === idNum || t === idNum
+              ? COLORS.edgeActive
+              : COLORS.edgeHidden;
+        colorAttr.setXYZ(k * 2, c.r, c.g, c.b);
+        colorAttr.setXYZ(k * 2 + 1, c.r, c.g, c.b);
+      });
+      colorAttr.needsUpdate = true;
     }
 
-    // Mount Billboard Label Sprites for Focal Node and Direct Neighbors
-    if (idNum) {
-      // 1. Focal Node Badge
-      const focalPos = nodePositionsRef.current.get(idNum);
-      const focalName = idToNameRef.current.get(idNum) || `DLL #${idNum}`;
+    const startTween = (toPos: THREE.Vector3, toTarget: THREE.Vector3) => {
+      const duration = prefersReducedMotion() ? 0 : TWEEN_MS;
+      if (duration === 0) {
+        camera.position.copy(toPos);
+        controls.target.copy(toTarget);
+        tweenRef.current = null;
+        return;
+      }
+      tweenRef.current = {
+        start: performance.now(),
+        duration,
+        fromPos: camera.position.clone(),
+        toPos,
+        fromTarget: controls.target.clone(),
+        toTarget,
+      };
+    };
+
+    if (idNum !== null) {
+      const focalPos = positionsRef.current[idToIndexRef.current.get(idNum) ?? -1];
       if (focalPos) {
-        const focalSprite = createLabelSprite(`#${idNum} ${focalName}`, true);
-        focalSprite.position.set(focalPos.x, focalPos.y + 24, focalPos.z);
-        labelGroup.add(focalSprite);
-      }
+        const addBadge = (id: number, isFocal: boolean) => {
+          const p = positionsRef.current[idToIndexRef.current.get(id) ?? -1];
+          if (!p) return;
+          const sprite = createLabelSprite(`#${id} ${idToNameRef.current.get(id) ?? ""}`, isFocal);
+          sprite.position.set(p.x, p.y + (isFocal ? 60 : 40), p.z);
+          badgeGroup.add(sprite);
+        };
+        addBadge(idNum, true);
+        neighbors?.forEach((n) => addBadge(n, false));
 
-      // 2. Neighbor Node Badges
-      if (neighbors) {
-        neighbors.forEach((neighborId) => {
-          const nPos = nodePositionsRef.current.get(neighborId);
-          const nName =
-            idToNameRef.current.get(neighborId) || `DLL #${neighborId}`;
-          if (nPos) {
-            const neighborSprite = createLabelSprite(
-              `#${neighborId} ${nName}`,
-              false,
-            );
-            neighborSprite.position.set(nPos.x, nPos.y + 20, nPos.z);
-            labelGroup.add(neighborSprite);
-          }
-        });
+        const outward = focalPos.clone();
+        if (outward.lengthSq() === 0) outward.set(0, 0, 1);
+        outward.normalize();
+        startTween(focalPos.clone().addScaledVector(outward, FOCUS_DISTANCE), focalPos.clone());
+        hadSelectionRef.current = true;
       }
-
-      // Smooth camera transition to focal node
-      if (focalPos && controlsRef.current && cameraRef.current) {
-        const controls = controlsRef.current;
-        const camera = cameraRef.current;
-        controls.target.copy(focalPos);
-        camera.position.set(focalPos.x, focalPos.y, focalPos.z + 450);
-        controls.update();
-      }
+    } else if (hadSelectionRef.current && overviewRef.current) {
+      startTween(overviewRef.current.pos.clone(), overviewRef.current.target.clone());
+      hadSelectionRef.current = false;
     }
   }, [selectedNodeId, data]);
 
   return (
-    <div
-      ref={mountRef}
-      style={{
-        position: "absolute",
-        inset: 0,
-        width: "100vw",
-        height: "100vh",
-        overflow: "hidden",
-        cursor: "grab",
-      }}
-    />
+    <Box ref={mountRef} sx={{ position: "absolute", inset: 0, overflow: "hidden", cursor: "grab" }}>
+      {hover && (
+        <Paper
+          elevation={6}
+          sx={{
+            position: "absolute",
+            left: hover.x + 14,
+            top: hover.y + 14,
+            px: 1,
+            py: 0.5,
+            pointerEvents: "none",
+            zIndex: 5,
+          }}
+        >
+          <Typography variant="caption">{hover.label}</Typography>
+        </Paper>
+      )}
+    </Box>
   );
 };
