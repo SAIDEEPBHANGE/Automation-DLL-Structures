@@ -121,6 +121,8 @@
     <None Include=".editorconfig" />
     <None Include="App.config" />
     <None Include="packages.config" />
+    <None Include="PlanOfAction.md" />
+    <None Include="README.md" />
   </ItemGroup>
   <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

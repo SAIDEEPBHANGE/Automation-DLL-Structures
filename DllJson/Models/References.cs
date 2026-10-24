@@ -2,7 +2,7 @@
 {
     public class References
     {
-        public string SourceDllId { get; set; }
-        public string TargetDllId { get; set; }
+        public int SourceDllId { get; set; }
+        public int TargetDllId { get; set; }
     }
 }

@@ -1,10 +1,10 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
+
 namespace DllJson.Models
 {
     public class DllInfo
     {
-        public string Id { get; set; } = Guid.NewGuid().ToString();
+        public int Id { get; set; }
         public string DllName { get; set; }
         public string Version { get; set; }
         public string FilePath { get; set; }

@@ -4,6 +4,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
 namespace DllJson.Services
@@ -19,50 +20,79 @@ namespace DllJson.Services
             _referenceBuilder = new ReferenceBuilder();
             _nativeAnalyzer = new NativeDllAnalyzer();
         }
+        private DllInfo CreateDllInfo(AssemblyDefinition assembly, string filePath, int numericId)
+        {
+            var dllInfo = new DllInfo
+            {
+                Id = numericId,
+                DllName = assembly.Name.Name,
+                Version = assembly.Name.Version?.ToString(),
+                FilePath = filePath,
+                Metadata = new Metadata
+                {
+                    AssemblyName = assembly.Name.Name,
+                    RuntimeVersion = assembly.MainModule.RuntimeVersion,
+                    ScanDate = DateTime.UtcNow
+                }
+            };
+
+            foreach (var reference in assembly.MainModule.AssemblyReferences)
+            {
+                dllInfo.Dependencies.Add(new Dependencies
+                {
+                    AssemblyName = reference.Name,
+                    Version = reference.Version?.ToString()
+                });
+            }
+
+            return dllInfo;
+        }
         public ScanResult Scan(FolderJson config)
         {
+            // Inside AssemblyScanner.Scan()
+
             var graph = new AssemblyGraph();
-            Console.WriteLine($"Scanning: {config.FolderPath}");
             var loadResult = LoadAssemblies(config.FolderPath);
             var assemblies = loadResult.Loaded;
-            var dllLookup =
-                new Dictionary<string, DllInfo>(
-                    StringComparer.OrdinalIgnoreCase);
-            //
-            // Build DllInfo
-            //
-            foreach (var item in assemblies)
+
+            // 1. Sort files deterministically by file path
+            var sortedPaths = assemblies.Keys
+                .OrderBy(p => p, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            // Lookups: by absolute path, and by assembly name for cross-referencing
+            var pathToDllMap = new Dictionary<string, DllInfo>(StringComparer.OrdinalIgnoreCase);
+            var nameToDllMap = new Dictionary<string, List<DllInfo>>(StringComparer.OrdinalIgnoreCase);
+
+            int currentId = 1;
+            foreach (var filePath in sortedPaths)
             {
-                var filePath = item.Key;
-                var assembly = item.Value;
-                var dllInfo = CreateDllInfo(
-                    assembly,
-                    filePath);
+                var assembly = assemblies[filePath];
+                var dllInfo = CreateDllInfo(assembly, filePath, currentId++);
+
                 graph.Dlls.Add(dllInfo);
-                dllLookup[assembly.Name.Name] = dllInfo;
+                pathToDllMap[filePath] = dllInfo;
+
+                var asmName = assembly.Name.Name;
+                if (!nameToDllMap.TryGetValue(asmName, out var list))
+                {
+                    list = new List<DllInfo>();
+                    nameToDllMap[asmName] = list;
+                }
+                list.Add(dllInfo);
             }
-            //
-            // Extract Types
-            //
+
+            // 2. Extract Types
             foreach (var item in assemblies)
             {
-                var assembly = item.Value;
-                if (dllLookup.TryGetValue(
-                    assembly.Name.Name,
-                    out var dllInfo))
+                if (pathToDllMap.TryGetValue(item.Key, out var dllInfo))
                 {
-                    _typeExtractor.ExtractTypes(
-                        assembly,
-                        dllInfo);
+                    _typeExtractor.ExtractTypes(item.Value, dllInfo);
                 }
             }
-            //
-            // Build References
-            //
-            _referenceBuilder.BuildDllReferences(
-                graph,
-                assemblies,
-                dllLookup);
+
+            // 3. Build References with deduplication
+            _referenceBuilder.BuildDllReferences(graph, assemblies, pathToDllMap, nameToDllMap);
             return new ScanResult
             {
                 Graph = graph,
