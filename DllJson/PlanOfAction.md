@@ -1,39 +1,52 @@
-# Revised Plan of Action
+# Project Understanding (Current Backend State)
 
-## **Phase 1: Deterministic Numeric IDs & Deduplication**
-* Sort all scanned DLL file paths alphabetically before processing to ensure order consistency across runs.
-* Assign sequential integer IDs (`1, 2, 3...`) to each DLL and type node instead of random GUIDs.
-* Map relationships using these numeric IDs to minimize memory and payload size.
-* Add a `HashSet` edge tracker in `ReferenceBuilder.cs` to eliminate duplicate edges between assemblies.
+## What this project does
+`DllJson` is a .NET Framework 4.8 console application that scans DLL folders, extracts assembly/type metadata using Mono.Cecil, builds dependency graphs, and writes compact JSON outputs for downstream visualization.
 
+## High-level flow
+1. `Program.cs` loads folder configurations from `FoldersJson`.
+2. For each folder, `AssemblyScanner.Scan()` loads managed DLLs and classifies native DLLs separately.
+3. `TypeExtractor` + `MemberExtractor` extract types and members into model objects.
+4. `ReferenceBuilder` builds:
+   - DLL-level edges (`AssemblyGraph.References`)
+   - Type-level edges (`AssemblyGraph.TypeReferences`)
+5. Output generation:
+   - Per-DLL detail files in `OutputPath/Dlls/{id}_{dll}.json`
+   - One lightweight master graph JSON (configured file name, e.g., `SmartPlantPID.json`)
+   - Audit run JSON via `AuditWriter` (including latest index in `api/latest-audit.json`)
 
+## Current architecture
+- **Models/**: graph, DLL/type/member DTOs, audit DTOs.
+- **Services/AssemblyScanner.cs**: discovery, loading, deterministic ordering, orchestration.
+- **Services/TypeExtractor.cs**: extracts classes/interfaces/structs/enums/delegates including nested types.
+- **Services/MemberExtractor.cs**: extracts fields/properties/methods/events for classes.
+- **Services/ReferenceBuilder.cs**: builds deduplicated DLL and type edges.
+- **Services/NativeDllAnalyzer.cs**: PE metadata extraction for unmanaged DLLs.
 
+## Status against the revised plan
 
-## **Phase 2: Implement Class-Level Graph Links (`BuildTypeReferences`)**
-* Build an indexed lookup map of valid offshore types (`FullName -> NumericNodeId`).
-* Add `BuildTypeReferences` in `ReferenceBuilder.cs` to traverse base types, interfaces, field types, and method signatures.
+### Phase 1: Deterministic Numeric IDs & Deduplication
+- Implemented: DLLs are sorted by file path before processing.
+- Implemented: DLL IDs are sequential numeric IDs.
+- Implemented: type node IDs for classes/interfaces/structs are sequential numeric IDs.
+- Implemented: DLL edge deduplication uses `HashSet<long>` in `BuildDllReferences`.
 
+### Phase 2: Class-Level Graph Links (`BuildTypeReferences`)
+- Implemented: indexed type lookup map (`FullName -> (TypeId, DllId)`).
+- Implemented: class-level traversal includes base type, interfaces, fields, properties, method return types, and parameters.
+- Implemented: framework-noise filtering for common prefixes (`System`, `Microsoft`, `mscorlib`, etc.).
+- Implemented: called during `AssemblyScanner.Scan()` after type extraction.
 
-* Filter out standard .NET runtime types (`System.*`, `Microsoft.*`, `mscorlib`) to eliminate graph noise.
-* Call `BuildTypeReferences` inside `AssemblyScanner.Scan()` right after `ExtractTypes`.
+### Phase 3: Serialization & Performance
+- Implemented: minified JSON (`WriteIndented = false`) in `Program.cs` and `AuditWriter.cs`.
+- Implemented: parallel writing of individual DLL detail files via `Parallel.ForEach`.
+- Implemented: lightweight master graph payload with compact node/edge structure.
 
+### Phase 4: Frontend (React + TypeScript + WebGL)
+- Not present in this repository yet (backend-only codebase currently).
 
-
-
-## **Phase 3: Serialization & Performance Optimization**
-* Set `WriteIndented = false` across `Program.cs` and `AuditWriter.cs` to cut JSON file sizes in half.
-
-
-* Parallelize writing the individual `Dlls/{id}.json` files using `Parallel.ForEach`.
-
-
-* Generate a lightweight `master-graph.json` containing only numeric node IDs, labels, and source-to-target edge pairs for fast browser loading.
-
-
-
-
-## **Phase 4: Frontend Development (React + TypeScript + WebGL)**
-* Initialize a Vite + React + TypeScript static application deployable to Netlify.
-* Integrate **Sigma.js / Graphology** to render the 50,000+ nodes and edges via WebGL at 60 FPS.
-* Implement in-memory pathfinding (BFS / Dijkstra) for tracing dependency flows from Point A to Point B.
-* Use MUI components for search bars, suite filters, and an on-demand drawer that fetches detailed DLL JSON on node selection.
+## Important implementation notes observed
+- Folder targets and output paths are currently hardcoded in `Models/FoldersJson.cs`.
+- Audit `RunId` is still a GUID (only graph node IDs are numeric/deterministic).
+- Native PE parsing currently reads `IMAGE_OPTIONAL_HEADER_32`; PE32+ (x64 optional header layout) handling should be validated for full 64-bit reliability.
+- `README.md` documents historical gaps; several listed backend gaps are already addressed in current code.
