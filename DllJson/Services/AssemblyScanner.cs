@@ -83,6 +83,7 @@ namespace DllJson.Services
             }
 
             // 2. Extract Types
+            // Extract Types
             foreach (var item in assemblies)
             {
                 if (pathToDllMap.TryGetValue(item.Key, out var dllInfo))
@@ -91,8 +92,18 @@ namespace DllJson.Services
                 }
             }
 
-            // 3. Build References with deduplication
-            _referenceBuilder.BuildDllReferences(graph, assemblies, pathToDllMap, nameToDllMap);
+            // Build DLL References
+            _referenceBuilder.BuildDllReferences(
+                graph,
+                assemblies,
+                pathToDllMap,
+                nameToDllMap);
+
+            // Build Type References
+            _referenceBuilder.BuildTypeReferences(
+                graph,
+                assemblies,
+                pathToDllMap);
             return new ScanResult
             {
                 Graph = graph,
