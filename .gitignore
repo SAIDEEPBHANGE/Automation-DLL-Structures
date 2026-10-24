@@ -2,3 +2,4 @@
 **/Backup/
 // Ignore All txt files
 *.txt
+*.zip

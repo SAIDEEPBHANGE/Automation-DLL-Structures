@@ -1,0 +1,63 @@
+{
+  "RunId": "98246ba8-539b-4bcc-bf7b-53a6b6e6dd26",
+  "StartedAt": "2026-10-24T10:13:11.5046771Z",
+  "EndedAt": "2026-10-24T10:13:12.3693152Z",
+  "TotalDurationMs": 864,
+  "TargetFramework": ".NET Framework 4.8",
+  "Machine": "DESKTOP-R8FPNUD",
+  "ProcessId": 8972,
+  "Config": {
+    "SolutionPath": "C:\\Users\\saide\\source\\repos\\DllJson\\DllJson\\bin\\Debug",
+    "AuditFolder": "D:\\Github Repository\\Off-Shore\\Backend-Audits\\data",
+    "IncludePatterns": ["*.dll"]
+  },
+  "Summary": {
+    "FoldersScanned": 2,
+    "TotalDlls": 4,
+    "Processed": 0,
+    "PartiallyProcessed": 0,
+    "Failed": 0,
+    "Skipped": 0,
+    "NativeFound": 0,
+    "Warnings": []
+  },
+  "Folders": [
+    {
+      "FolderName": "SmartPlantPID",
+      "FolderPath": "D:\\Off-Share\\UnitTest\\TestPID",
+      "DllCount": 2,
+      "Counts": {
+        "Processed": 0,
+        "PartiallyProcessed": 0,
+        "Failed": 0,
+        "Skipped": 0,
+        "Native": 0
+      },
+      "StartedAt": "2026-10-24T10:13:11.5109075Z",
+      "EndedAt": "2026-10-24T10:13:12.2884885Z",
+      "DurationMs": 777,
+      "Dlls": [],
+      "NativeDlls": [],
+      "Warnings": []
+    },
+    {
+      "FolderName": "SmartPlant3D",
+      "FolderPath": "D:\\Off-Share\\UnitTest\\Test3D",
+      "DllCount": 2,
+      "Counts": {
+        "Processed": 0,
+        "PartiallyProcessed": 0,
+        "Failed": 0,
+        "Skipped": 0,
+        "Native": 0
+      },
+      "StartedAt": "2026-10-24T10:13:12.2884885Z",
+      "EndedAt": "2026-10-24T10:13:12.3618583Z",
+      "DurationMs": 73,
+      "Dlls": [],
+      "NativeDlls": [],
+      "Warnings": []
+    }
+  ],
+  "GeneratedAt": "2026-10-24T10:13:12.3766513Z"
+}
