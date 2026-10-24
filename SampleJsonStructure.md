@@ -124,10 +124,22 @@ This document provides sample output structures for the three main JSON outputs 
 			  "Attributes": []
 			}
 		  ],
-		  "Attributes": []
+		  "Attributes": [
+			{
+			  "Name": "System.ObsoleteAttribute",
+			  "Arguments": {
+				"message": "Use Load(DiagramDto, bool) instead."
+			  }
+			}
+		  ]
 		}
 	  ],
-	  "Events": []
+	  "Events": [
+		{
+		  "Name": "DiagramChanged",
+		  "EventType": "SmartPlant.Core.DiagramChangedHandler"
+		}
+	  ]
 	}
   ],
 	"Interfaces": [
@@ -168,7 +180,9 @@ This document provides sample output structures for the three main JSON outputs 
 		  "CanWrite": false
 		}
 	  ],
-	  "ImplementedInterfaces": []
+	  "ImplementedInterfaces": [
+		"SmartPlant.Core.IEntityService"
+	  ]
 	}
   ],
   "Structs": [

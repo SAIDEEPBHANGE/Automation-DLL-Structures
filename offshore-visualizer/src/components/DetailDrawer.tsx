@@ -23,7 +23,7 @@ import {
 import { useTheme } from "@mui/material/styles";
 import CloseIcon from "@mui/icons-material/Close";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
-import type { DllDetailPayload, MemberItem, MemberKind, TypeDetailItem, TypeKind } from "../types/detail";
+import type { AttributeItem, DllDetailPayload, MemberItem, MemberKind, TypeDetailItem, TypeKind } from "../types/detail";
 import { NAV_HEIGHT, DRAWER_WIDTH } from "../theme";
 
 interface DetailDrawerProps {
@@ -66,6 +66,24 @@ const MEMBER_COLOR: Record<MemberKind, string> = {
 const TYPE_COLOR = "#5eead4";
 const MONO = { fontFamily: 'Consolas, "Cascadia Mono", monospace', fontSize: 12.5 };
 
+const AttributeChips: React.FC<{ attributes: AttributeItem[] }> = ({ attributes }) => (
+  <>
+    {attributes.map((a, i) => {
+      const args = a.args.map((x) => (x.key.startsWith("Item") ? x.value : `${x.key}=${x.value}`)).join(", ");
+      return (
+        <Chip
+          key={`${a.name}-${i}`}
+          size="small"
+          color={a.name === "Obsolete" ? "warning" : "default"}
+          variant="outlined"
+          label={`[${a.name}${args ? `(${args})` : ""}]`}
+          sx={{ height: 18, fontSize: 10.5, maxWidth: "100%" }}
+        />
+      );
+    })}
+  </>
+);
+
 const MemberRow: React.FC<{ member: MemberItem }> = ({ member: m }) => {
   const stacked = m.params.length > 0;
   const params = m.params.map((p, i) => (
@@ -88,14 +106,21 @@ const MemberRow: React.FC<{ member: MemberItem }> = ({ member: m }) => {
         borderRadius: "0 6px 6px 0",
       }}
     >
-      {m.flags.length > 0 && (
+      {(m.flags.length > 0 || m.attributes.length > 0) && (
         <Stack direction="row" sx={{ mb: 0.5, flexWrap: "wrap", gap: 0.5 }}>
           {m.flags.map((f) => (
             <Chip key={f} size="small" label={f} sx={{ height: 18, fontSize: 10.5 }} />
           ))}
+          <AttributeChips attributes={m.attributes} />
         </Stack>
       )}
-      <Box sx={{ ...MONO, wordBreak: "break-word" }}>
+      <Box
+        sx={{
+          ...MONO,
+          wordBreak: "break-word",
+          ...(m.isObsolete ? { textDecoration: "line-through", opacity: 0.75 } : {}),
+        }}
+      >
         {m.returnType && (
           <Box component="span" sx={{ color: TYPE_COLOR }}>
             {m.returnType}{" "}
@@ -135,15 +160,19 @@ const TypeCard: React.FC<{ item: TypeDetailItem }> = ({ item }) => {
         <InfoRow label="Namespace" value={item.namespace} />
         <InfoRow label="Extends" value={item.baseType} />
         <InfoRow label="Signature" value={item.signature} />
-        {item.flags.length > 0 && (
-          <Stack direction="row" spacing={0.5} sx={{ mb: 1 }}>
+        {(item.flags.length > 0 || item.attributes.length > 0) && (
+          <Stack direction="row" sx={{ mb: 1, flexWrap: "wrap", gap: 0.5 }}>
             {item.flags.map((f) => (
               <Chip key={f} size="small" label={f} />
             ))}
+            <AttributeChips attributes={item.attributes} />
           </Stack>
         )}
         {item.interfaces.length > 0 && (
-          <InfoRow label={`Implements (${item.interfaces.length})`} value={item.interfaces.join(", ")} />
+          <InfoRow
+            label={`${item.kind === "Interface" ? "Extends" : "Implements"} (${item.interfaces.length})`}
+            value={item.interfaces.join(", ")}
+          />
         )}
         {item.enumValues.length > 0 && (
           <Box sx={{ mb: 1 }}>
@@ -181,15 +210,17 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({ isOpen, onClose, det
   const [typeSearch, setTypeSearch] = useState("");
   const [kindFilter, setKindFilter] = useState<TypeKind | "All">("All");
   const [visible, setVisible] = useState(PAGE_SIZE);
+  const [obsoleteOnly, setObsoleteOnly] = useState(false);
 
   const filtered = useMemo(() => {
     const q = typeSearch.trim().toLowerCase();
     return (detail?.types ?? []).filter(
       (t) =>
         (kindFilter === "All" || t.kind === kindFilter) &&
+        (!obsoleteOnly || t.isObsolete || t.members.some((m) => m.isObsolete)) &&
         (q === "" || t.name.toLowerCase().includes(q) || t.namespace.toLowerCase().includes(q)),
     );
-  }, [detail, typeSearch, kindFilter]);
+  }, [detail, typeSearch, kindFilter, obsoleteOnly]);
 
   const totalTypes = detail?.types.length ?? 0;
 
@@ -263,6 +294,11 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({ isOpen, onClose, det
               <>
                 <InfoRow label="File path" value={detail.filePath} />
                 <InfoRow label="Runtime" value={detail.runtimeVersion} />
+                <InfoRow label="Culture" value={detail.culture} />
+                <InfoRow label="Public key token" value={detail.publicKeyToken} />
+                {detail.obsoleteCount > 0 && (
+                  <InfoRow label="Types with obsolete" value={String(detail.obsoleteCount)} />
+                )}
                 <InfoRow label="Scan date" value={detail.scanDate ? new Date(detail.scanDate).toLocaleString() : undefined} />
                 <Typography variant="overline" color="text.secondary">
                   Type breakdown
@@ -347,6 +383,18 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({ isOpen, onClose, det
                         }}
                       />
                     ))}
+                    {detail.obsoleteCount > 0 && (
+                      <Chip
+                        size="small"
+                        label={`Obsolete only (${detail.obsoleteCount})`}
+                        color="warning"
+                        variant={obsoleteOnly ? "filled" : "outlined"}
+                        onClick={() => {
+                          setObsoleteOnly((v) => !v);
+                          setVisible(PAGE_SIZE);
+                        }}
+                      />
+                    )}
                   </Stack>
                   <Stack spacing={0.75}>
                     {filtered.slice(0, visible).map((t) => (

@@ -1,8 +1,10 @@
 import type {
+  AttributeItem,
   ConnectedDll,
   DllDetailPayload,
   MemberItem,
   MemberParam,
+  RawAttribute,
   RawDllDetail,
   RawParameter,
   RawType,
@@ -19,12 +21,38 @@ export function shortType(t: string | undefined | null): string {
   return t.replace(/`\d+/g, "").replace(/\b(?:\w+\.)+(\w+)/g, "$1");
 }
 
+function stringifyValue(v: unknown): string {
+  if (v === null || v === undefined) return "null";
+  if (typeof v === "string") return `"${v}"`;
+  if (typeof v === "object") {
+    try {
+      return JSON.stringify(v);
+    } catch {
+      return String(v);
+    }
+  }
+  return String(v);
+}
+
+/** System.ObsoleteAttribute -> Obsolete */
+export function mapAttributes(raw: RawAttribute[] | null | undefined): AttributeItem[] {
+  return (raw ?? []).map((a) => ({
+    name: shortType(a.Name).replace(/Attribute$/, "") || a.Name,
+    args: Object.entries(a.Arguments ?? {}).map(([key, value]) => ({ key, value: stringifyValue(value) })),
+  }));
+}
+
+export function hasObsolete(attrs: AttributeItem[]): boolean {
+  return attrs.some((a) => a.name === "Obsolete");
+}
+
 function mapParams(params: RawParameter[] | undefined): MemberParam[] {
   return (params ?? []).map((p) => ({
     type: shortType(p.Type),
     name: p.Name,
     modifier: p.IsOut ? "out" : p.IsRef ? "ref" : undefined,
     optional: !!p.IsOptional,
+    attributes: mapAttributes(p.Attributes),
   }));
 }
 
@@ -41,6 +69,7 @@ function mapMembers(raw: RawType): MemberItem[] {
     const flags = [f.IsPublic ? "public" : "private"];
     if (f.IsStatic) flags.push("static");
     if (f.IsReadonly) flags.push("readonly");
+    const attributes = mapAttributes(f.Attributes);
     members.push({
       name: f.Name,
       kind: "Field",
@@ -48,11 +77,14 @@ function mapMembers(raw: RawType): MemberItem[] {
       returnType: shortType(f.Type),
       params: [],
       flags,
+      attributes,
+      isObsolete: hasObsolete(attributes),
     });
   });
 
   (raw.Properties ?? []).forEach((p) => {
     const acc = [p.CanRead ? "get" : "", p.CanWrite ? "set" : ""].filter(Boolean).join("; ");
+    const attributes = mapAttributes(p.Attributes);
     members.push({
       name: p.Name,
       kind: "Property",
@@ -61,6 +93,8 @@ function mapMembers(raw: RawType): MemberItem[] {
       params: [],
       accessors: acc ? `{ ${acc}; }` : undefined,
       flags: [],
+      attributes,
+      isObsolete: hasObsolete(attributes),
     });
   });
 
@@ -71,6 +105,7 @@ function mapMembers(raw: RawType): MemberItem[] {
     else if (m.IsVirtual) flags.push("virtual");
     if (m.IsConstructor) flags.push("constructor");
     const ret = m.IsConstructor ? "" : `${shortType(m.ReturnType)} `;
+    const attributes = mapAttributes(m.Attributes);
     members.push({
       name: m.IsConstructor ? raw.Name : m.Name,
       kind: "Method",
@@ -78,10 +113,13 @@ function mapMembers(raw: RawType): MemberItem[] {
       returnType: m.IsConstructor ? undefined : shortType(m.ReturnType),
       params: mapParams(m.Parameters),
       flags,
+      attributes,
+      isObsolete: hasObsolete(attributes),
     });
   });
 
   (raw.Events ?? []).forEach((e) => {
+    const attributes = mapAttributes(e.Attributes);
     members.push({
       name: e.Name,
       kind: "Event",
@@ -89,6 +127,8 @@ function mapMembers(raw: RawType): MemberItem[] {
       returnType: shortType(e.Type ?? e.EventType) || undefined,
       params: [],
       flags: [],
+      attributes,
+      isObsolete: hasObsolete(attributes),
     });
   });
 
@@ -99,6 +139,7 @@ function mapType(raw: RawType, kind: TypeKind): TypeDetailItem {
   const flags: string[] = [];
   if (raw.IsAbstract) flags.push("abstract");
   if (raw.IsSealed) flags.push("sealed");
+  const attributes = mapAttributes(raw.Attributes);
   return {
     key: `${kind}:${raw.FullName}`,
     name: raw.Name,
@@ -114,6 +155,8 @@ function mapType(raw: RawType, kind: TypeKind): TypeDetailItem {
       kind === "Delegate"
         ? `${shortType(raw.ReturnType)} ${raw.Name}(${formatParams(raw.Parameters)})`
         : undefined,
+    attributes,
+    isObsolete: hasObsolete(attributes),
   };
 }
 
@@ -135,7 +178,14 @@ export function buildInitialDetail(
     references: [],
     types: [],
     typeCounts: { ...EMPTY_COUNTS },
+    obsoleteCount: 0,
   };
+}
+
+/** "1_Interop.SPFW.json" -> 1 (detail files are prefixed with the DLL id). */
+function idFromDetailFile(file: string | null | undefined): number | undefined {
+  const m = /(?:^|[\\/])(\d+)_[^\\/]*$/.exec(file ?? "");
+  return m ? parseInt(m[1], 10) : undefined;
 }
 
 export function mapDllDetail(
@@ -144,12 +194,17 @@ export function mapDllDetail(
   data: MasterGraphPayload,
 ): DllDetailPayload {
   const idByName = new Map<string, number>(data.dlls.map((d) => [d.name.toLowerCase(), d.id]));
-  const references = (raw.Dependencies ?? []).map((d) => ({
-    name: d.AssemblyName,
-    version: d.Version,
-    isLocal: !!d.IsLocalDll,
-    graphId: idByName.get(d.AssemblyName.toLowerCase()),
-  }));
+  const knownIds = new Set(data.dlls.map((d) => d.id));
+  const references = (raw.Dependencies ?? []).map((d) => {
+    const fromFile = idFromDetailFile(d.ReferencedJsonFile);
+    return {
+      name: d.AssemblyName,
+      version: d.Version,
+      isLocal: !!d.IsLocalDll,
+      referencedJsonFile: d.ReferencedJsonFile ?? undefined,
+      graphId: idByName.get(d.AssemblyName.toLowerCase()) ?? (fromFile && knownIds.has(fromFile) ? fromFile : undefined),
+    };
+  });
 
   const types: TypeDetailItem[] = [
     ...(raw.Classes ?? []).map((t) => mapType(t, "Class")),
@@ -161,6 +216,7 @@ export function mapDllDetail(
 
   const typeCounts = { ...EMPTY_COUNTS };
   types.forEach((t) => (typeCounts[t.kind] += 1));
+  const obsoleteCount = types.filter((t) => t.isObsolete || t.members.some((m) => m.isObsolete)).length;
 
   const dependencies: ConnectedDll[] = base.dependencies;
 
@@ -169,10 +225,13 @@ export function mapDllDetail(
     version: raw.Version || base.version,
     filePath: raw.FilePath,
     runtimeVersion: raw.Metadata?.RuntimeVersion,
+    culture: raw.Metadata?.Culture ?? undefined,
+    publicKeyToken: raw.Metadata?.PublicKeyToken ?? undefined,
     scanDate: raw.Metadata?.ScanDate,
     dependencies,
     references,
     types,
     typeCounts,
+    obsoleteCount,
   };
 }

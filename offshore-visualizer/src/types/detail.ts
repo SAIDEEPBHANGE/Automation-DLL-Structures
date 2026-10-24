@@ -1,10 +1,17 @@
 /* Raw DLL detail JSON (PascalCase, as written by the backend scanner) */
+export interface RawAttribute {
+  Name: string;
+  Arguments?: Record<string, unknown> | null;
+}
+
 export interface RawParameter {
   Name: string;
   Type: string;
   IsOptional?: boolean;
+  DefaultValue?: unknown;
   IsOut?: boolean;
   IsRef?: boolean;
+  Attributes?: RawAttribute[] | null;
 }
 
 export interface RawField {
@@ -13,6 +20,7 @@ export interface RawField {
   IsPublic?: boolean;
   IsStatic?: boolean;
   IsReadonly?: boolean;
+  Attributes?: RawAttribute[] | null;
 }
 
 export interface RawProperty {
@@ -20,6 +28,7 @@ export interface RawProperty {
   Type: string;
   CanRead?: boolean;
   CanWrite?: boolean;
+  Attributes?: RawAttribute[] | null;
 }
 
 export interface RawMethod {
@@ -31,12 +40,14 @@ export interface RawMethod {
   IsAbstract?: boolean;
   IsConstructor?: boolean;
   Parameters?: RawParameter[];
+  Attributes?: RawAttribute[] | null;
 }
 
 export interface RawEvent {
   Name: string;
   Type?: string;
   EventType?: string;
+  Attributes?: RawAttribute[] | null;
 }
 
 export interface RawType {
@@ -56,6 +67,7 @@ export interface RawType {
   Values?: string[];
   ReturnType?: string;
   Parameters?: RawParameter[];
+  Attributes?: RawAttribute[] | null;
 }
 
 export interface RawDllDetail {
@@ -65,6 +77,8 @@ export interface RawDllDetail {
   FilePath?: string;
   Metadata?: {
     AssemblyName?: string;
+    Culture?: string | null;
+    PublicKeyToken?: string | null;
     RuntimeVersion?: string;
     ScanDate?: string;
   };
@@ -72,6 +86,7 @@ export interface RawDllDetail {
     AssemblyName: string;
     Version?: string;
     IsLocalDll?: boolean;
+    ReferencedJsonFile?: string | null;
   }>;
   Classes?: RawType[];
   Interfaces?: RawType[];
@@ -83,11 +98,18 @@ export interface RawDllDetail {
 /* View models used by the UI */
 export type MemberKind = "Method" | "Property" | "Field" | "Event";
 
+export interface AttributeItem {
+  /** Short name without namespace or the "Attribute" suffix, e.g. "Obsolete". */
+  name: string;
+  args: Array<{ key: string; value: string }>;
+}
+
 export interface MemberParam {
   type: string;
   name: string;
   modifier?: "out" | "ref";
   optional: boolean;
+  attributes: AttributeItem[];
 }
 
 export interface MemberItem {
@@ -99,6 +121,8 @@ export interface MemberItem {
   params: MemberParam[];
   accessors?: string;
   flags: string[];
+  attributes: AttributeItem[];
+  isObsolete: boolean;
 }
 
 export type TypeKind = "Class" | "Interface" | "Struct" | "Enum" | "Delegate";
@@ -115,6 +139,8 @@ export interface TypeDetailItem {
   members: MemberItem[];
   enumValues: string[];
   signature?: string;
+  attributes: AttributeItem[];
+  isObsolete: boolean;
 }
 
 export interface ConnectedDll {
@@ -126,6 +152,7 @@ export interface ExternalReference {
   name: string;
   version?: string;
   isLocal: boolean;
+  referencedJsonFile?: string;
   /** Present when the reference resolves to a DLL in the master graph. */
   graphId?: number;
 }
@@ -137,6 +164,8 @@ export interface DllDetailPayload {
   architecture: string;
   filePath?: string;
   runtimeVersion?: string;
+  culture?: string;
+  publicKeyToken?: string;
   scanDate?: string;
   /** Assemblies this DLL consumes (outbound edges). */
   dependencies: ConnectedDll[];
@@ -145,4 +174,5 @@ export interface DllDetailPayload {
   references: ExternalReference[];
   types: TypeDetailItem[];
   typeCounts: Record<TypeKind, number>;
+  obsoleteCount: number;
 }
