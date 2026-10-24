@@ -9,6 +9,68 @@ interface ThreeGraphCanvasProps {
   onNodeClick: (nodeId: string | null) => void;
 }
 
+// Generates an auto-facing billboard text badge
+function createLabelSprite(text: string, isFocal: boolean): THREE.Sprite {
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+
+  canvas.width = 512;
+  canvas.height = 128;
+
+  if (ctx) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // High-contrast badge background
+    ctx.fillStyle = isFocal
+      ? "rgba(245, 158, 11, 0.95)"
+      : "rgba(15, 23, 42, 0.92)";
+    const radius = 24;
+    const x = 16;
+    const y = 16;
+    const w = canvas.width - 32;
+    const h = canvas.height - 32;
+
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + w - radius, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
+    ctx.lineTo(x + w, y + h - radius);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
+    ctx.lineTo(x + radius, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
+    ctx.lineTo(x, y + radius);
+    ctx.quadraticCurveTo(x, y, x + radius, y);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = isFocal ? "#ffffff" : "#38bdf8";
+    ctx.stroke();
+
+    ctx.fillStyle = isFocal ? "#000000" : "#ffffff";
+    ctx.font = 'bold 38px "Segoe UI", sans-serif';
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true; // REQUIRED for CanvasTexture
+
+  const spriteMaterial = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+  });
+
+  const sprite = new THREE.Sprite(spriteMaterial);
+  // Scale enlarged from (160, 40) to (500, 125) to remain visible at world distances
+  sprite.scale.set(isFocal ? 600 : 450, isFocal ? 150 : 112, 1);
+  sprite.renderOrder = 999;
+  return sprite;
+}
+
 export const ThreeGraphCanvas: React.FC<ThreeGraphCanvasProps> = ({
   data,
   selectedNodeId,
@@ -22,13 +84,17 @@ export const ThreeGraphCanvas: React.FC<ThreeGraphCanvasProps> = ({
   const instancedMeshRef = useRef<THREE.InstancedMesh | null>(null);
   const lineMeshRef = useRef<THREE.LineSegments | null>(null);
 
-  // Position & adjacency lookup
+  // Group container holding active label sprites
+  const labelGroupRef = useRef<THREE.Group | null>(null);
+
+  // Quick lookups
   const nodePositionsRef = useRef<Map<number, THREE.Vector3>>(new Map());
   const adjacencyRef = useRef<Map<number, Set<number>>>(new Map());
   const idToIndexRef = useRef<Map<number, number>>(new Map());
   const indexToIdRef = useRef<number[]>([]);
+  const idToNameRef = useRef<Map<number, string>>(new Map());
 
-  // 1. Scene, Camera, WebGLRenderer, Controls, and Raycaster Setup
+  // 1. Scene, Camera, WebGLRenderer, Controls, Raycaster
   useEffect(() => {
     if (!mountRef.current) return;
     const container = mountRef.current;
@@ -39,7 +105,10 @@ export const ThreeGraphCanvas: React.FC<ThreeGraphCanvasProps> = ({
     scene.background = new THREE.Color(0x090d16);
     sceneRef.current = scene;
 
-    // Adjusted near plane from 0.1 to 10 to eliminate near-clipping slicing
+    const labelGroup = new THREE.Group();
+    scene.add(labelGroup);
+    labelGroupRef.current = labelGroup;
+
     const camera = new THREE.PerspectiveCamera(50, width / height, 10, 100000);
     cameraRef.current = camera;
 
@@ -60,7 +129,6 @@ export const ThreeGraphCanvas: React.FC<ThreeGraphCanvasProps> = ({
     const ambientLight = new THREE.AmbientLight(0xffffff, 1.2);
     scene.add(ambientLight);
 
-    // Raycaster for precise node clicking
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
 
@@ -83,7 +151,6 @@ export const ThreeGraphCanvas: React.FC<ThreeGraphCanvasProps> = ({
 
     renderer.domElement.addEventListener("click", handleClick);
 
-    // Animation Loop
     let animationFrameId: number;
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
@@ -112,14 +179,13 @@ export const ThreeGraphCanvas: React.FC<ThreeGraphCanvasProps> = ({
     };
   }, [onNodeClick]);
 
-  // 2. Build Geometries & Dynamically Calculate Camera Auto-Fit Distance
+  // 2. Build Geometries & Instanced Mesh
   useEffect(() => {
     const scene = sceneRef.current;
     const camera = cameraRef.current;
     const controls = controlsRef.current;
     if (!scene || !camera || !controls || !data) return;
 
-    // Clean up previous buffers
     if (instancedMeshRef.current) {
       scene.remove(instancedMeshRef.current);
       instancedMeshRef.current.geometry.dispose();
@@ -136,14 +202,15 @@ export const ThreeGraphCanvas: React.FC<ThreeGraphCanvasProps> = ({
     const adjacency = new Map<number, Set<number>>();
     const idToIndex = new Map<number, number>();
     const indexToId: number[] = [];
+    const idToName = new Map<number, string>();
 
-    // Spherical Distribution
     const phi = Math.PI * (3 - Math.sqrt(5));
     const baseRadius = Math.max(1200, Math.sqrt(totalNodes) * 65);
 
     data.dlls.forEach((dll, idx) => {
       idToIndex.set(dll.id, idx);
       indexToId.push(dll.id);
+      idToName.set(dll.id, dll.name);
       adjacency.set(dll.id, new Set());
 
       const y = 1 - (idx / (totalNodes - 1 || 1)) * 2;
@@ -162,8 +229,8 @@ export const ThreeGraphCanvas: React.FC<ThreeGraphCanvasProps> = ({
     adjacencyRef.current = adjacency;
     idToIndexRef.current = idToIndex;
     indexToIdRef.current = indexToId;
+    idToNameRef.current = idToName;
 
-    // Create Instanced Spheres
     const sphereGeo = new THREE.SphereGeometry(12, 16, 16);
     const sphereMat = new THREE.MeshBasicMaterial();
     const instancedMesh = new THREE.InstancedMesh(
@@ -197,7 +264,7 @@ export const ThreeGraphCanvas: React.FC<ThreeGraphCanvasProps> = ({
     scene.add(instancedMesh);
     instancedMeshRef.current = instancedMesh;
 
-    // Build LineSegments for Edges
+    // Build Lines
     const linePositions: number[] = [];
     const lineColors: number[] = [];
 
@@ -237,7 +304,7 @@ export const ThreeGraphCanvas: React.FC<ThreeGraphCanvasProps> = ({
     scene.add(lineMesh);
     lineMeshRef.current = lineMesh;
 
-    // Calculate Dynamic Auto-Fit Camera Distance based on FOV
+    // Framing
     const fovInRadians = (camera.fov * Math.PI) / 180;
     const requiredDistance = (baseRadius / Math.sin(fovInRadians / 2)) * 1.35;
 
@@ -248,10 +315,21 @@ export const ThreeGraphCanvas: React.FC<ThreeGraphCanvasProps> = ({
     controls.update();
   }, [data]);
 
-  // 3. Highlight Selected Node & Neighbors, and Fly Camera
+  // 3. Highlight Colors, Render Billboard Sprites & Animate Camera
   useEffect(() => {
     const instancedMesh = instancedMeshRef.current;
-    if (!instancedMesh || !data) return;
+    const labelGroup = labelGroupRef.current;
+    if (!instancedMesh || !labelGroup || !data) return;
+
+    // Clear existing billboard labels
+    while (labelGroup.children.length > 0) {
+      const child = labelGroup.children[0] as THREE.Sprite;
+      if (child.material) {
+        if (child.material.map) child.material.map.dispose();
+        child.material.dispose();
+      }
+      labelGroup.remove(child);
+    }
 
     const idNum = selectedNodeId ? parseInt(selectedNodeId, 10) : null;
     const neighbors = idNum ? adjacencyRef.current.get(idNum) : null;
@@ -262,6 +340,7 @@ export const ThreeGraphCanvas: React.FC<ThreeGraphCanvasProps> = ({
     const defaultColor = new THREE.Color(0x3b82f6); // Normal blue
     const vendorColor = new THREE.Color(0x334155);
 
+    // Update instance colors
     data.dlls.forEach((dll, idx) => {
       if (!idNum) {
         const isVendor =
@@ -283,14 +362,40 @@ export const ThreeGraphCanvas: React.FC<ThreeGraphCanvasProps> = ({
       instancedMesh.instanceColor.needsUpdate = true;
     }
 
-    // Camera fly-to when a node is selected
-    if (idNum && controlsRef.current && cameraRef.current) {
-      const pos = nodePositionsRef.current.get(idNum);
-      if (pos) {
+    // Mount Billboard Label Sprites for Focal Node and Direct Neighbors
+    if (idNum) {
+      // 1. Focal Node Badge
+      const focalPos = nodePositionsRef.current.get(idNum);
+      const focalName = idToNameRef.current.get(idNum) || `DLL #${idNum}`;
+      if (focalPos) {
+        const focalSprite = createLabelSprite(`#${idNum} ${focalName}`, true);
+        focalSprite.position.set(focalPos.x, focalPos.y + 24, focalPos.z);
+        labelGroup.add(focalSprite);
+      }
+
+      // 2. Neighbor Node Badges
+      if (neighbors) {
+        neighbors.forEach((neighborId) => {
+          const nPos = nodePositionsRef.current.get(neighborId);
+          const nName =
+            idToNameRef.current.get(neighborId) || `DLL #${neighborId}`;
+          if (nPos) {
+            const neighborSprite = createLabelSprite(
+              `#${neighborId} ${nName}`,
+              false,
+            );
+            neighborSprite.position.set(nPos.x, nPos.y + 20, nPos.z);
+            labelGroup.add(neighborSprite);
+          }
+        });
+      }
+
+      // Smooth camera transition to focal node
+      if (focalPos && controlsRef.current && cameraRef.current) {
         const controls = controlsRef.current;
         const camera = cameraRef.current;
-        controls.target.copy(pos);
-        camera.position.set(pos.x, pos.y, pos.z + 450);
+        controls.target.copy(focalPos);
+        camera.position.set(focalPos.x, focalPos.y, focalPos.z + 450);
         controls.update();
       }
     }
