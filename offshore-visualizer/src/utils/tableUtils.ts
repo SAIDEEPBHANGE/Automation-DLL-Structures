@@ -1,5 +1,6 @@
 import type { MasterGraphPayload } from "../types/graph";
 import { getArchitectureLabel, isVendorDll } from "./dllClassifier";
+import { getDllFramework, type FrameworkFamily } from "./frameworkUtils";
 
 export interface GraphTableRow {
   id: number;
@@ -10,9 +11,10 @@ export interface GraphTableRow {
   outbound: number;
   inbound: number;
   typeCount: number;
+  framework: FrameworkFamily;
 }
 
-export type TableSortKey = "id" | "name" | "version" | "outbound" | "inbound" | "typeCount";
+export type TableSortKey = "id" | "name" | "version" | "outbound" | "inbound" | "typeCount" | "framework";
 export type VendorFilter = "all" | "vendor" | "own";
 
 export function buildTableRows(data: MasterGraphPayload | null): GraphTableRow[] {
@@ -35,14 +37,21 @@ export function buildTableRows(data: MasterGraphPayload | null): GraphTableRow[]
     outbound: outbound.get(d.id) ?? 0,
     inbound: inbound.get(d.id) ?? 0,
     typeCount: types.get(d.id) ?? 0,
+    framework: getDllFramework(d),
   }));
 }
 
-export function filterTableRows(rows: GraphTableRow[], text: string, vendor: VendorFilter): GraphTableRow[] {
+export function filterTableRows(
+  rows: GraphTableRow[],
+  text: string,
+  vendor: VendorFilter,
+  framework: FrameworkFamily | "all" = "all",
+): GraphTableRow[] {
   const q = text.trim().toLowerCase();
   return rows.filter(
     (r) =>
       (vendor === "all" || (vendor === "vendor") === r.isVendor) &&
+      (framework === "all" || r.framework === framework) &&
       (q === "" || r.name.toLowerCase().includes(q) || String(r.id).includes(q)),
   );
 }

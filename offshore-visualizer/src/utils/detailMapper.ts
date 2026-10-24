@@ -10,9 +10,11 @@ import type {
   RawType,
   TypeDetailItem,
   TypeKind,
+  TypeLink,
 } from "../types/detail";
 import type { MasterGraphPayload } from "../types/graph";
 import { getArchitectureLabel } from "./dllClassifier";
+import { getDllFramework, normalizeFramework } from "./frameworkUtils";
 import { getConnectedDlls } from "./graphUtils";
 
 /** Strips namespaces and generic arity: System.Collections.Generic.List`1 -> List */
@@ -52,6 +54,8 @@ function mapParams(params: RawParameter[] | undefined): MemberParam[] {
     name: p.Name,
     modifier: p.IsOut ? "out" : p.IsRef ? "ref" : undefined,
     optional: !!p.IsOptional,
+    defaultValue:
+      p.DefaultValue === null || p.DefaultValue === undefined ? undefined : stringifyValue(p.DefaultValue),
     attributes: mapAttributes(p.Attributes),
   }));
 }
@@ -142,8 +146,10 @@ function mapType(raw: RawType, kind: TypeKind): TypeDetailItem {
   const attributes = mapAttributes(raw.Attributes);
   return {
     key: `${kind}:${raw.FullName}`,
+    id: raw.Id,
     name: raw.Name,
     fullName: raw.FullName,
+    declaringType: raw.DeclaringType ? shortType(raw.DeclaringType) : undefined,
     kind,
     namespace: raw.Namespace ?? "",
     baseType: raw.BaseType ? shortType(raw.BaseType) : undefined,
@@ -163,15 +169,45 @@ function mapType(raw: RawType, kind: TypeKind): TypeDetailItem {
 
 const EMPTY_COUNTS: Record<TypeKind, number> = { Class: 0, Interface: 0, Struct: 0, Enum: 0, Delegate: 0 };
 
+function buildTypeLinks(data: MasterGraphPayload, dllId: number): TypeLink[] {
+  const nodeName = new Map<number, string>(data.nodes.map((n) => [n.i, n.n]));
+  const dllName = new Map<number, string>(data.dlls.map((d) => [d.id, d.name]));
+  const links: TypeLink[] = [];
+  data.typeEdges.forEach((e) => {
+    if (e.sd === dllId && e.td !== dllId) {
+      links.push({
+        direction: "out",
+        kind: e.k,
+        localType: nodeName.get(e.s) ?? String(e.s),
+        otherType: nodeName.get(e.t) ?? String(e.t),
+        otherDllId: e.td,
+        otherDllName: dllName.get(e.td) ?? String(e.td),
+      });
+    } else if (e.td === dllId && e.sd !== dllId) {
+      links.push({
+        direction: "in",
+        kind: e.k,
+        localType: nodeName.get(e.t) ?? String(e.t),
+        otherType: nodeName.get(e.s) ?? String(e.s),
+        otherDllId: e.sd,
+        otherDllName: dllName.get(e.sd) ?? String(e.sd),
+      });
+    }
+  });
+  return links;
+}
+
 /** Immediate view model from the master graph (before the detail chunk arrives). */
 export function buildInitialDetail(
   data: MasterGraphPayload,
-  dll: { id: number; name: string; version?: string },
+  dll: { id: number; name: string; version?: string; fw?: string | null },
 ): DllDetailPayload {
   const { outbound, inbound } = getConnectedDlls(data, dll.id);
   return {
     id: dll.id,
     name: dll.name,
+    framework: getDllFramework(dll),
+    typeLinks: buildTypeLinks(data, dll.id),
     version: dll.version,
     architecture: getArchitectureLabel(dll.name),
     dependencies: outbound,
@@ -226,6 +262,8 @@ export function mapDllDetail(
     version: raw.Version || base.version,
     filePath: raw.FilePath,
     runtimeVersion: raw.Metadata?.RuntimeVersion,
+    assemblyName: raw.Metadata?.AssemblyName,
+    framework: base.framework !== "unknown" ? base.framework : normalizeFramework(raw.Metadata?.RuntimeVersion),
     culture: raw.Metadata?.Culture ?? undefined,
     publicKeyToken: raw.Metadata?.PublicKeyToken ?? undefined,
     scanDate: raw.Metadata?.ScanDate,

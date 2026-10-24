@@ -8,6 +8,8 @@ import { Loader } from "./components/Loader";
 import { DetailDrawer } from "./components/DetailDrawer";
 import { AuditPage } from "./pages/AuditPage";
 import { GraphTablePage } from "./pages/GraphTablePage";
+import { FrameworkLegend } from "./components/FrameworkLegend";
+import { countFrameworks } from "./utils/frameworkUtils";
 import { fetchJson } from "./utils/fetchUtils";
 import { buildInitialDetail, mapDllDetail } from "./utils/detailMapper";
 import { buildSearchOptions, getGraphStats, resolveDetailUrl, type Suite } from "./utils/graphUtils";
@@ -71,6 +73,8 @@ export const App: React.FC = () => {
 
   const searchOptions = useMemo(() => buildSearchOptions(data), [data]);
   const stats = useMemo(() => getGraphStats(data), [data]);
+  const [colorMode, setColorMode] = useState<"framework" | "default">("framework");
+  const frameworkCounts = useMemo(() => countFrameworks(data), [data]);
 
   const handleNodeClick = useCallback((nodeId: string | null) => {
     setSelectedNode(nodeId);
@@ -97,7 +101,13 @@ export const App: React.FC = () => {
         {page === "graph" ? (
           <Fade in key="graph" timeout={400}>
             <Box sx={{ position: "absolute", inset: 0 }}>
-              <ThreeGraphCanvas data={data} selectedNodeId={selectedNode} onNodeClick={handleNodeClick} />
+              <ThreeGraphCanvas
+                data={data}
+                selectedNodeId={selectedNode}
+                onNodeClick={handleNodeClick}
+                colorMode={colorMode}
+              />
+              <FrameworkLegend counts={frameworkCounts} colorMode={colorMode} onColorModeChange={setColorMode} />
               <Loader
                 open={isLoading}
                 message={`Loading ${selectedSuite}...`}

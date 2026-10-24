@@ -40,7 +40,14 @@ export function buildSearchOptions(data: MasterGraphPayload | null): SearchOptio
 
 export function getGraphStats(data: MasterGraphPayload | null) {
   if (!data) return undefined;
-  return { nodesCount: data.dlls.length, edgesCount: data.dllEdges.length };
+  return {
+    nodesCount: data.dlls.length,
+    edgesCount: data.dllEdges.length,
+    typeNodeCount: data.stats?.typeNodeCount ?? data.nodes.length,
+    dllRefCount: data.stats?.dllRefCount ?? data.dllEdges.length,
+    typeRefCount: data.stats?.typeRefCount ?? data.typeEdges.length,
+    generatedAt: data.generatedAt,
+  };
 }
 
 export function resolveDetailUrl(

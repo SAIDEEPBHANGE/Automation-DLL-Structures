@@ -14,6 +14,7 @@ import {
   Select,
   TextField,
   Toolbar,
+  Tooltip,
   Typography,
   useMediaQuery,
 } from "@mui/material";
@@ -34,7 +35,14 @@ interface NavbarProps {
   onSuiteChange: (suite: Suite) => void;
   options: SearchOption[];
   onSelectNode: (nodeId: string) => void;
-  stats?: { nodesCount: number; edgesCount: number };
+  stats?: {
+    nodesCount: number;
+    edgesCount: number;
+    typeNodeCount: number;
+    dllRefCount: number;
+    typeRefCount: number;
+    generatedAt?: string;
+  };
 }
 
 const filterOptions = createFilterOptions<SearchOption>({ limit: 12 });
@@ -81,10 +89,22 @@ export const Navbar: React.FC<NavbarProps> = ({
         </Typography>
 
         {showStats && stats && (
-          <Box sx={{ display: "flex", gap: 1, ml: 1 }}>
-            <Chip size="small" variant="outlined" label={`${stats.nodesCount.toLocaleString()} DLLs`} />
-            <Chip size="small" variant="outlined" label={`${stats.edgesCount.toLocaleString()} Edges`} />
-          </Box>
+          <Tooltip
+            arrow
+            title={
+              <Box sx={{ fontSize: 12, lineHeight: 1.6 }}>
+                <div>Type nodes: {stats.typeNodeCount.toLocaleString()}</div>
+                <div>DLL references: {stats.dllRefCount.toLocaleString()}</div>
+                <div>Type references: {stats.typeRefCount.toLocaleString()}</div>
+                {stats.generatedAt && <div>Generated: {new Date(stats.generatedAt).toLocaleString()}</div>}
+              </Box>
+            }
+          >
+            <Box sx={{ display: "flex", gap: 1, ml: 1 }}>
+              <Chip size="small" variant="outlined" label={`${stats.nodesCount.toLocaleString()} DLLs`} />
+              <Chip size="small" variant="outlined" label={`${stats.edgesCount.toLocaleString()} Edges`} />
+            </Box>
+          </Tooltip>
         )}
 
         {!isMobile && (

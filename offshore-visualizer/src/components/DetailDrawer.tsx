@@ -24,7 +24,8 @@ import {
 import { useTheme } from "@mui/material/styles";
 import CloseIcon from "@mui/icons-material/Close";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
-import type { AttributeItem, DllDetailPayload, MemberItem, MemberKind, MemberParam, TypeDetailItem, TypeKind } from "../types/detail";
+import type { AttributeItem, DllDetailPayload, MemberItem, MemberKind, MemberParam, TypeDetailItem, TypeKind, TypeLink } from "../types/detail";
+import { FRAMEWORK_LABEL, frameworkCss } from "../utils/frameworkUtils";
 import { NAV_HEIGHT, DRAWER_WIDTH } from "../theme";
 
 interface DetailDrawerProps {
@@ -106,14 +107,22 @@ const ParamList: React.FC<{ params: MemberParam[] }> = ({ params }) => (
         {p.modifier && <Box component="span" sx={{ color: "#f87171" }}>{p.modifier} </Box>}
         <Box component="span" sx={{ color: TYPE_COLOR }}>{p.type}</Box>{" "}
         <Box component="span" sx={{ color: "text.primary" }}>{p.name}</Box>
-        {p.optional && <Box component="span" sx={{ color: "text.secondary" }}> = optional</Box>}
+        {p.optional && (
+          <Box component="span" sx={{ color: "text.secondary" }}> = {p.defaultValue ?? "optional"}</Box>
+        )}
+        {!p.optional && p.defaultValue && (
+          <Box component="span" sx={{ color: "text.secondary" }}> = {p.defaultValue}</Box>
+        )}
         {i < params.length - 1 && ","}
       </Box>
     ))}
   </Box>
 );
 
-const MemberRow: React.FC<{ member: MemberItem }> = ({ member: m }) => {
+const MemberRow: React.FC<{ member: MemberItem; onOpenType?: (name: string) => void }> = ({
+  member: m,
+  onOpenType,
+}) => {
   const stacked = m.params.length > 0;
 
   return (
@@ -142,7 +151,16 @@ const MemberRow: React.FC<{ member: MemberItem }> = ({ member: m }) => {
         }}
       >
         {m.returnType && (
-          <Box component="span" sx={{ color: TYPE_COLOR }}>
+          <Box
+            component="span"
+            onClick={m.kind === "Event" && onOpenType ? () => onOpenType(m.returnType ?? "") : undefined}
+            sx={{
+              color: TYPE_COLOR,
+              ...(m.kind === "Event" && onOpenType
+                ? { cursor: "pointer", textDecoration: "underline dotted" }
+                : {}),
+            }}
+          >
             {m.returnType}{" "}
           </Box>
         )}
@@ -162,12 +180,23 @@ const MemberRow: React.FC<{ member: MemberItem }> = ({ member: m }) => {
   );
 };
 
-const TypeCard: React.FC<{ item: TypeDetailItem }> = ({ item }) => {
+const TypeCard: React.FC<{
+  item: TypeDetailItem;
+  expanded: boolean;
+  onToggle: (key: string, open: boolean) => void;
+  onOpenType: (name: string) => void;
+}> = ({ item, expanded, onToggle, onOpenType }) => {
   const grouped = MEMBER_ORDER.map((k) => ({ kind: k, items: item.members.filter((m) => m.kind === k) })).filter(
     (g) => g.items.length > 0,
   );
   return (
-    <Accordion disableGutters slotProps={{ transition: { unmountOnExit: true } }} sx={{ bgcolor: "background.default" }}>
+    <Accordion
+      disableGutters
+      expanded={expanded}
+      onChange={(_, open) => onToggle(item.key, open)}
+      slotProps={{ transition: { unmountOnExit: true } }}
+      sx={{ bgcolor: "background.default" }}
+    >
       <AccordionSummary expandIcon={<ExpandMoreIcon />}>
         <Stack direction="row" spacing={1} sx={{ alignItems: "center", minWidth: 0 }}>
           <Chip size="small" label={item.kind} color={KIND_COLOR[item.kind]} variant="outlined" />
@@ -182,6 +211,9 @@ const TypeCard: React.FC<{ item: TypeDetailItem }> = ({ item }) => {
       </AccordionSummary>
       <AccordionDetails>
         <InfoRow label="Namespace" value={item.namespace} />
+        <InfoRow label="Full name" value={item.fullName} />
+        <InfoRow label="Type ID" value={item.id !== undefined ? String(item.id) : undefined} />
+        <InfoRow label="Nested in" value={item.declaringType} />
         <InfoRow label="Extends" value={item.baseType} />
         <InfoRow label="Signature" value={item.signature} />
         {item.delegateParams.length > 0 && (
@@ -222,13 +254,73 @@ const TypeCard: React.FC<{ item: TypeDetailItem }> = ({ item }) => {
             </Typography>
             <Stack spacing={0.75} sx={{ mt: 0.5, maxHeight: 360, overflowY: "auto", pr: 0.5 }}>
               {g.items.map((m, i) => (
-                <MemberRow key={`${m.name}-${i}`} member={m} />
+                <MemberRow
+                  key={`${m.name}-${i}`}
+                  member={m}
+                  onOpenType={m.kind === "Event" ? onOpenType : undefined}
+                />
               ))}
             </Stack>
           </Box>
         ))}
       </AccordionDetails>
     </Accordion>
+  );
+};
+
+const LINKS_PAGE = 50;
+
+const TypeLinksSection: React.FC<{ links: TypeLink[]; onJumpToNode: (id: string) => void }> = ({
+  links,
+  onJumpToNode,
+}) => {
+  const [kind, setKind] = useState("All");
+  const [shown, setShown] = useState(LINKS_PAGE);
+  const kinds = useMemo(() => Array.from(new Set(links.map((l) => l.kind))), [links]);
+  const rows = useMemo(() => links.filter((l) => kind === "All" || l.kind === kind), [links, kind]);
+  if (links.length === 0) return null;
+  return (
+    <Box sx={{ mt: 1 }}>
+      <Typography variant="overline" color="text.secondary">
+        Type links ({links.length})
+      </Typography>
+      <Stack direction="row" sx={{ flexWrap: "wrap", gap: 0.5, mb: 1 }}>
+        {["All", ...kinds].map((k) => (
+          <Chip
+            key={k}
+            size="small"
+            label={k}
+            color={kind === k ? "primary" : "default"}
+            variant={kind === k ? "filled" : "outlined"}
+            onClick={() => {
+              setKind(k);
+              setShown(LINKS_PAGE);
+            }}
+          />
+        ))}
+      </Stack>
+      <List dense disablePadding>
+        {rows.slice(0, shown).map((l, i) => (
+          <ListItemButton key={i} onClick={() => onJumpToNode(String(l.otherDllId))} sx={{ borderRadius: 1 }}>
+            <ListItemText
+              primary={
+                l.direction === "out"
+                  ? `${l.localType} → ${l.otherType}`
+                  : `${l.otherType} → ${l.localType}`
+              }
+              secondary={`${l.direction === "out" ? "uses" : "used by"} ${l.otherDllName}`}
+              slotProps={{ primary: { noWrap: true, sx: MONO } }}
+            />
+            <Chip size="small" variant="outlined" label={l.kind} />
+          </ListItemButton>
+        ))}
+      </List>
+      {rows.length > shown && (
+        <Button fullWidth onClick={() => setShown((n) => n + LINKS_PAGE)}>
+          Show more ({rows.length - shown} remaining)
+        </Button>
+      )}
+    </Box>
   );
 };
 
@@ -240,6 +332,18 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({ isOpen, onClose, det
   const [kindFilter, setKindFilter] = useState<TypeKind | "All">("All");
   const [visible, setVisible] = useState(PAGE_SIZE);
   const [obsoleteOnly, setObsoleteOnly] = useState(false);
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+
+  const openType = (name: string) => {
+    const target = detail?.types.find((t) => t.name === name);
+    if (!target) return;
+    setKindFilter("All");
+    setObsoleteOnly(false);
+    setTypeSearch(target.name);
+    setVisible(PAGE_SIZE);
+    setExpandedKey(target.key);
+  };
+  const toggleType = (key: string, open: boolean) => setExpandedKey(open ? key : null);
 
   const filtered = useMemo(() => {
     const q = typeSearch.trim().toLowerCase();
@@ -301,6 +405,12 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({ isOpen, onClose, det
                 <Chip size="small" color="secondary" label={`#${detail.id}`} />
                 <Chip size="small" color="primary" variant="outlined" label={detail.architecture} />
                 {detail.version && <Chip size="small" label={`v${detail.version}`} />}
+                <Chip
+                  size="small"
+                  variant="outlined"
+                  label={FRAMEWORK_LABEL[detail.framework]}
+                  sx={{ borderColor: frameworkCss(detail.framework), color: frameworkCss(detail.framework) }}
+                />
               </Stack>
               <Typography variant="h6" sx={{ wordBreak: "break-word", lineHeight: 1.25 }}>
                 {detail.name}
@@ -322,6 +432,9 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({ isOpen, onClose, det
             {tab === 0 && (
               <>
                 <InfoRow label="File path" value={detail.filePath} />
+                {detail.assemblyName && detail.assemblyName !== detail.name && (
+                  <InfoRow label="Assembly name" value={detail.assemblyName} />
+                )}
                 <InfoRow label="Runtime" value={detail.runtimeVersion} />
                 <InfoRow label="Culture" value={detail.culture} />
                 <InfoRow label="Public key token" value={detail.publicKeyToken} />
@@ -355,7 +468,11 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({ isOpen, onClose, det
                         onClick={() => r.graphId !== undefined && onJumpToNode(String(r.graphId))}
                         sx={{ borderRadius: 1 }}
                       >
-                        <ListItemText primary={r.name} secondary={r.version ? `v${r.version}` : undefined} slotProps={{ primary: { noWrap: true } }} />
+                        <ListItemText
+                          primary={r.name}
+                          secondary={[r.version ? `v${r.version}` : "", r.referencedJsonFile ?? ""].filter(Boolean).join(" · ") || undefined}
+                          slotProps={{ primary: { noWrap: true } }}
+                        />
                         <Chip size="small" variant="outlined" label={r.isLocal ? "local" : "external"} />
                       </ListItemButton>
                     ))}
@@ -371,6 +488,7 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({ isOpen, onClose, det
                 </Typography>
                 {renderConnected("Depends on", detail.dependencies)}
                 {renderConnected("Used by", detail.dependents)}
+                <TypeLinksSection links={detail.typeLinks} onJumpToNode={onJumpToNode} />
               </>
             )}
 
@@ -427,7 +545,13 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({ isOpen, onClose, det
                   </Stack>
                   <Stack spacing={0.75}>
                     {filtered.slice(0, visible).map((t) => (
-                      <TypeCard key={t.key} item={t} />
+                      <TypeCard
+                        key={t.key}
+                        item={t}
+                        expanded={expandedKey === t.key}
+                        onToggle={toggleType}
+                        onOpenType={openType}
+                      />
                     ))}
                   </Stack>
                   {filtered.length > visible && (

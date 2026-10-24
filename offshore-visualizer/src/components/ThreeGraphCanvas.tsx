@@ -5,6 +5,12 @@ import { Box, Paper, Typography } from "@mui/material";
 import type { MasterGraphPayload } from "../types/graph";
 import { buildAdjacency } from "../utils/graphUtils";
 import { isVendorDll } from "../utils/dllClassifier";
+import {
+  FRAMEWORK_HEX,
+  FRAMEWORK_ORDER,
+  getDllFramework,
+  type FrameworkFamily,
+} from "../utils/frameworkUtils";
 import { prefersReducedMotion } from "../utils/motion";
 import {
   COLORS,
@@ -21,7 +27,15 @@ interface ThreeGraphCanvasProps {
   data: MasterGraphPayload | null;
   selectedNodeId: string | null;
   onNodeClick: (nodeId: string | null) => void;
+  colorMode?: "framework" | "default";
 }
+
+const FRAMEWORK_THREE_COLORS = Object.fromEntries(
+  FRAMEWORK_ORDER.map((f) => {
+    const normal = new THREE.Color(FRAMEWORK_HEX[f]);
+    return [f, { normal, vendor: normal.clone().lerp(COLORS.dimmed, 0.55) }];
+  }),
+) as Record<FrameworkFamily, { normal: THREE.Color; vendor: THREE.Color }>;
 
 interface CameraTween {
   start: number;
@@ -39,6 +53,7 @@ export const ThreeGraphCanvas: React.FC<ThreeGraphCanvasProps> = ({
   data,
   selectedNodeId,
   onNodeClick,
+  colorMode = "framework",
 }) => {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -362,9 +377,15 @@ export const ThreeGraphCanvas: React.FC<ThreeGraphCanvasProps> = ({
     const neighbors = idNum !== null ? adjacencyRef.current.get(idNum) : undefined;
     const target = targetScaleRef.current;
 
+    const baseColor = (dll: { name: string; fw?: string | null }): THREE.Color => {
+      if (colorMode !== "framework") return isVendorDll(dll.name) ? COLORS.vendor : COLORS.normal;
+      const c = FRAMEWORK_THREE_COLORS[getDllFramework(dll)];
+      return isVendorDll(dll.name) ? c.vendor : c.normal;
+    };
+
     data.dlls.forEach((dll, idx) => {
       if (idNum === null) {
-        mesh.setColorAt(idx, isVendorDll(dll.name) ? COLORS.vendor : COLORS.normal);
+        mesh.setColorAt(idx, baseColor(dll));
         target[idx] = 1;
       } else if (dll.id === idNum) {
         mesh.setColorAt(idx, COLORS.selected);
@@ -437,7 +458,7 @@ export const ThreeGraphCanvas: React.FC<ThreeGraphCanvasProps> = ({
       startTween(overviewRef.current.pos.clone(), overviewRef.current.target.clone());
       hadSelectionRef.current = false;
     }
-  }, [selectedNodeId, data]);
+  }, [selectedNodeId, data, colorMode]);
 
   return (
     <Box ref={mountRef} sx={{ position: "absolute", inset: 0, overflow: "hidden", cursor: "grab" }}>

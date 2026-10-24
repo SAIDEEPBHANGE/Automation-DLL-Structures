@@ -1,3 +1,5 @@
+import type { FrameworkFamily } from "../utils/frameworkUtils";
+
 /* Raw DLL detail JSON (PascalCase, as written by the backend scanner) */
 export interface RawAttribute {
   Name: string;
@@ -109,6 +111,7 @@ export interface MemberParam {
   name: string;
   modifier?: "out" | "ref";
   optional: boolean;
+  defaultValue?: string;
   attributes: AttributeItem[];
 }
 
@@ -129,8 +132,10 @@ export type TypeKind = "Class" | "Interface" | "Struct" | "Enum" | "Delegate";
 
 export interface TypeDetailItem {
   key: string;
+  id?: number;
   name: string;
   fullName: string;
+  declaringType?: string;
   kind: TypeKind;
   namespace: string;
   baseType?: string;
@@ -158,9 +163,22 @@ export interface ExternalReference {
   graphId?: number;
 }
 
+export interface TypeLink {
+  direction: "out" | "in";
+  kind: string;
+  /** Type on this DLL and the type on the other side. */
+  localType: string;
+  otherType: string;
+  otherDllId: number;
+  otherDllName: string;
+}
+
 export interface DllDetailPayload {
   id: number;
   name: string;
+  assemblyName?: string;
+  framework: FrameworkFamily;
+  typeLinks: TypeLink[];
   version?: string;
   architecture: string;
   filePath?: string;

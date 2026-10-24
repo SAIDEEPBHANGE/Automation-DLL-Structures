@@ -1,16 +1,17 @@
 ### Plan of Action (Remaining Work)
 
-Reference: `SampleJsonStructure.md` (revised).
+Reference: `SampleJsonStructure.md`.
 
-Done and removed: everything from earlier plans plus the revised-sample work (parameter attribute chips, delegate parameters and Obsolete styling, attribute formatting with tooltips, audit Steps stepper, summary warnings alert, "Has warnings" filter, null-safe mapping, render loop paused when the tab is hidden). `tsc`, `eslint` and `vite build` pass.
+Done and removed: everything from earlier plans, plus detail-view completeness (assembly name, framework chip, type full name / ID / "Nested in", parameter default values, referenced JSON file, type links grouped by kind, event type jumps to its delegate card, navbar stats tooltip with type / reference counts and generated time) and framework colouring (`frameworkUtils`, three.js colour mode, legend with Framework / Default toggle, Table framework column and filter). `tsc`, `eslint` and `vite build` pass.
 
 ---
 
 #### Remaining
 
-1. **Event link:** make an event's `EventType` jump to its delegate card in the same DLL (expand and scroll).
-2. **Warning count column** in the audit DLL table (optional polish).
-3. **Fixture test:** a small script that runs `mapDllDetail` on the revised sample and asserts attributes, delegate params and obsolete flags.
-4. **Manual verification:** Graph, Table, Audit and drawer at mobile, tablet and desktop widths for both suites.
-5. **Performance check:** ~17k audit rows and a 2k+ node scene.
-6. **Optional:** `react-router-dom` URL routing; script to sync `Backend-Audits/data` into `public/data/Backend-Audits`.
+1. **Backend (needed for real colours):** add an optional `fw` (e.g. `"net48"`, `"net6.0"`, `"netstandard2.0"`) to each `dlls[]` item in the master graph. Until then every node is grey "Unknown", except the drawer, which falls back to `RuntimeVersion` from the detail file. The viewer already reads `fw`.
+2. **Optional fallback:** pass the audit `TargetFramework` as a suite-level default when `fw` is missing.
+3. **Audit table:** warning count column.
+4. **Fixture test:** run `mapDllDetail` on the revised sample; assert attributes, delegate params, obsolete flags, `DeclaringType`, `DefaultValue`, type links.
+5. **Manual verification:** Graph (both colour modes), Table, Audit and drawer at mobile / tablet / desktop for both suites.
+6. **Performance check:** ~17k audit rows; 2k+ nodes (colour-mode switch only recolours instances).
+7. **Optional:** `react-router-dom`; sync script for `Backend-Audits/data`.

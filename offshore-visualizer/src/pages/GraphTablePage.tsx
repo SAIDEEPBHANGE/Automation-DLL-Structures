@@ -19,6 +19,7 @@ import {
 } from "@mui/material";
 import type { MasterGraphPayload } from "../types/graph";
 import { DRAWER_WIDTH } from "../theme";
+import { FRAMEWORK_LABEL, FRAMEWORK_ORDER, frameworkCss, type FrameworkFamily } from "../utils/frameworkUtils";
 import {
   buildTableRows,
   filterTableRows,
@@ -47,6 +48,7 @@ export const GraphTablePage: React.FC<GraphTablePageProps> = ({
 }) => {
   const [text, setText] = useState("");
   const [vendor, setVendor] = useState<VendorFilter>("all");
+  const [fwFilter, setFwFilter] = useState<FrameworkFamily | "all">("all");
   const [sortKey, setSortKey] = useState<TableSortKey>("id");
   const [dir, setDir] = useState<"asc" | "desc">("asc");
   const [page, setPage] = useState(0);
@@ -54,8 +56,8 @@ export const GraphTablePage: React.FC<GraphTablePageProps> = ({
 
   const rows = useMemo(() => buildTableRows(data), [data]);
   const visible = useMemo(
-    () => sortTableRows(filterTableRows(rows, text, vendor), sortKey, dir),
-    [rows, text, vendor, sortKey, dir],
+    () => sortTableRows(filterTableRows(rows, text, vendor, fwFilter), sortKey, dir),
+    [rows, text, vendor, fwFilter, sortKey, dir],
   );
   const pageRows = visible.slice(page * pageSize, page * pageSize + pageSize);
 
@@ -127,6 +129,22 @@ export const GraphTablePage: React.FC<GraphTablePageProps> = ({
                 <MenuItem value="own">Application</MenuItem>
                 <MenuItem value="vendor">Vendor / Runtime</MenuItem>
               </TextField>
+              <TextField
+                select
+                size="small"
+                label="Framework"
+                value={fwFilter}
+                onChange={(e) => {
+                  setFwFilter(e.target.value as FrameworkFamily | "all");
+                  setPage(0);
+                }}
+                sx={{ minWidth: 170 }}
+              >
+                <MenuItem value="all">All</MenuItem>
+                {FRAMEWORK_ORDER.map((f) => (
+                  <MenuItem key={f} value={f}>{FRAMEWORK_LABEL[f]}</MenuItem>
+                ))}
+              </TextField>
             </Stack>
             <TableContainer>
               <Table size="small">
@@ -136,6 +154,7 @@ export const GraphTablePage: React.FC<GraphTablePageProps> = ({
                     {head("name", "Assembly")}
                     {head("version", "Version", undefined, hideXs)}
                     <TableCell sx={{ display: { xs: "none", md: "table-cell" } }}>Origin</TableCell>
+                    {head("framework", "Framework", undefined, { display: { xs: "none", md: "table-cell" } })}
                     {head("outbound", "Depends on", "right")}
                     {head("inbound", "Used by", "right")}
                     {head("typeCount", "Types", "right", hideXs)}
@@ -158,6 +177,14 @@ export const GraphTablePage: React.FC<GraphTablePageProps> = ({
                       <TableCell sx={{ display: { xs: "none", md: "table-cell" } }}>
                         <Chip size="small" variant="outlined" color={r.isVendor ? "default" : "primary"} label={r.architecture} />
                       </TableCell>
+                      <TableCell sx={{ display: { xs: "none", md: "table-cell" } }}>
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          label={FRAMEWORK_LABEL[r.framework]}
+                          sx={{ borderColor: frameworkCss(r.framework), color: frameworkCss(r.framework) }}
+                        />
+                      </TableCell>
                       <TableCell align="right">{r.outbound}</TableCell>
                       <TableCell align="right">{r.inbound}</TableCell>
                       <TableCell align="right" sx={hideXs}>
@@ -167,7 +194,7 @@ export const GraphTablePage: React.FC<GraphTablePageProps> = ({
                   ))}
                   {pageRows.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={7} align="center">
+                      <TableCell colSpan={8} align="center">
                         No assemblies match the filters.
                       </TableCell>
                     </TableRow>

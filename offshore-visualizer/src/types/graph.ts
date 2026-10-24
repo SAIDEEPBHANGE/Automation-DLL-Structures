@@ -12,6 +12,7 @@ export interface MasterGraphPayload {
     name: string;
     version?: string;
     detailFile: string;
+    fw?: string | null; // Target framework, e.g. "net48" (optional)
   }>;
   nodes: Array<{
     i: number;      // Type Id
