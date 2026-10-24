@@ -31,7 +31,8 @@ namespace DllJson.Services
             var fileName = $"audit_{_run.StartedAt.ToString("yyyyMMdd_HHmmss")}.json";
             var tempPath = Path.Combine(_auditFolder, fileName + ".tmp");
             var finalPath = Path.Combine(_auditFolder, fileName);
-            var opts = new JsonSerializerOptions { WriteIndented = true };
+            // Change line 34 from WriteIndented = true to:
+            var opts = new JsonSerializerOptions { WriteIndented = false };
             var json = JsonSerializer.Serialize(_run, opts);
             File.WriteAllText(tempPath, json);
             if (File.Exists(finalPath)) File.Delete(finalPath);

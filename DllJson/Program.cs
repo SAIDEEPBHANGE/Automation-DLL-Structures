@@ -5,10 +5,11 @@ using DllJson.Models;
 using DllJson.Services;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
-using System.Diagnostics;
+using System.Threading.Tasks;
 namespace DllJson
 {
     public class Program
@@ -31,6 +32,13 @@ namespace DllJson
                     IncludePatterns = new List<string> { "*.dll" }
                 }
             };
+            // Shared minified JSON configuration
+            var minifiedOptions = new JsonSerializerOptions
+            {
+                WriteIndented = false,
+                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+            };
+
             foreach (var folderConfig in config.Configurations)
             {
                 var folderAudit = new FolderAudit
@@ -39,28 +47,25 @@ namespace DllJson
                     FolderPath = folderConfig.FolderPath,
                     StartedAt = DateTime.UtcNow
                 };
+
                 try
                 {
-                    Directory.CreateDirectory(
-                        folderConfig.OutputPath);
-                    Console.WriteLine(
-                        $"Processing: {folderConfig.JsonFileName}");
+                    Directory.CreateDirectory(folderConfig.OutputPath);
+                    Console.WriteLine($"Processing: {folderConfig.JsonFileName}");
+
                     var scanner = new AssemblyScanner();
                     var scanResult = scanner.Scan(folderConfig);
                     var graph = scanResult.Graph;
-                    // Update counts
+
                     folderAudit.DllCount = graph.Dlls.Count + (scanResult.Skipped?.Count ?? 0) + (scanResult.NativeDlls?.Count ?? 0);
-                    //
-                    // Create Dlls folder
-                    //
-                    var dllFolder = Path.Combine(
-                        folderConfig.OutputPath,
-                        "Dlls");
+
+                    // 1. Parallelize individual DLL detail file writing
+                    var dllFolder = Path.Combine(folderConfig.OutputPath, "Dlls");
                     Directory.CreateDirectory(dllFolder);
-                    //
-                    // Save one file per DLL
-                    //
-                    foreach (var dll in graph.Dlls)
+
+                    var syncLock = new object();
+
+                    Parallel.ForEach(graph.Dlls, dll =>
                     {
                         var dllAudit = new DllAudit
                         {
@@ -68,33 +73,31 @@ namespace DllJson
                             DllPath = dll.FilePath,
                             StartedAt = DateTime.UtcNow
                         };
+
                         try
                         {
-                            var dllFileName =
-                                MakeSafeFileName(dll.DllName) + ".json";
-                            var dllPath = Path.Combine(
-                                dllFolder,
-                                dllFileName);
-                            var dllJson = JsonSerializer.Serialize(
-                                dll,
-                                new JsonSerializerOptions
-                                {
-                                    WriteIndented = true
-                                });
-                            File.WriteAllText(
-                                dllPath,
-                                dllJson);
+                            // Name files deterministically by their numeric ID or sanitized name
+                            var dllFileName = $"{dll.Id}_{MakeSafeFileName(dll.DllName)}.json";
+                            var dllPath = Path.Combine(dllFolder, dllFileName);
+
+                            var dllJson = JsonSerializer.Serialize(dll, minifiedOptions);
+                            File.WriteAllText(dllPath, dllJson);
+
                             dllAudit.EndedAt = DateTime.UtcNow;
                             dllAudit.DurationMs = (long)(dllAudit.EndedAt.Value - dllAudit.StartedAt).TotalMilliseconds;
                             dllAudit.Status = "Processed";
                             dllAudit.Result = "Success";
-                            // compute processed types from available collections in DllInfo
                             dllAudit.ProcessedTypesCount = (dll.Classes?.Count ?? 0)
-                                                           + (dll.Interfaces?.Count ?? 0)
-                                                           + (dll.Structs?.Count ?? 0)
-                                                           + (dll.Enums?.Count ?? 0)
-                                                           + (dll.Delegates?.Count ?? 0);
-                            folderAudit.Counts.Processed++;
+                                                         + (dll.Interfaces?.Count ?? 0)
+                                                         + (dll.Structs?.Count ?? 0)
+                                                         + (dll.Enums?.Count ?? 0)
+                                                         + (dll.Delegates?.Count ?? 0);
+
+                            lock (syncLock)
+                            {
+                                folderAudit.Counts.Processed++;
+                                folderAudit.Dlls.Add(dllAudit);
+                            }
                         }
                         catch (Exception exDll)
                         {
@@ -109,114 +112,85 @@ namespace DllJson
                                 Message = exDll.Message,
                                 StackTrace = exDll.StackTrace
                             };
-                            folderAudit.Counts.Failed++;
-                            Console.WriteLine($"DLL ERROR: {exDll.Message}");
+
+                            lock (syncLock)
+                            {
+                                folderAudit.Counts.Failed++;
+                                folderAudit.Dlls.Add(dllAudit);
+                            }
                         }
-                        folderAudit.Dlls.Add(dllAudit);
-                    }
-                    // record native DLLs with extracted metadata
-                    if (scanResult.NativeDlls != null && scanResult.NativeDlls.Count > 0)
+                    });
+
+                    // 2. Export Master Graph (Topology Only)
+                    // Flattened nodes with short keys: i = Id, n = Name, d = DllId, k = Kind
+                    var typeNodes = new List<object>();
+
+                    foreach (var dll in graph.Dlls)
                     {
-                        foreach (var nativeInfo in scanResult.NativeDlls)
+                        if (dll.Classes != null)
                         {
-                            var nativeAudit = new NativeDllAudit
-                            {
-                                DllName = nativeInfo.FileName,
-                                DllPath = nativeInfo.FilePath,
-                                FileSizeBytes = nativeInfo.FileSizeBytes,
-                                CreatedDate = nativeInfo.CreatedDate,
-                                ModifiedDate = nativeInfo.ModifiedDate,
-                                FileVersion = nativeInfo.FileVersion,
-                                ProductVersion = nativeInfo.ProductVersion,
-                                ProductName = nativeInfo.ProductName,
-                                CompanyName = nativeInfo.CompanyName,
-                                FileDescription = nativeInfo.FileDescription,
-                                Architecture = nativeInfo.Architecture,
-                                TimeDateStamp = nativeInfo.TimeDateStamp,
-                                Subsystem = nativeInfo.Subsystem,
-                                OperatingSystemVersion = nativeInfo.OperatingSystemVersion,
-                                ExtractionError = nativeInfo.ExtractionError
-                            };
-                            folderAudit.NativeDlls.Add(nativeAudit);
-                            folderAudit.Counts.Native++;
+                            foreach (var c in dll.Classes)
+                                typeNodes.Add(new { i = c.Id, n = c.Name, fn = c.FullName, d = dll.Id, k = "Class" });
                         }
-                    }
-                    // record other skipped/failed assemblies from scanner (non-native)
-                    if (scanResult.Skipped != null && scanResult.Skipped.Count > 0)
-                    {
-                        foreach (var skip in scanResult.Skipped)
+                        if (dll.Interfaces != null)
                         {
-                            // Skip native DLLs - already handled above
-                            if (skip.SkipCategory == "Native")
-                                continue;
-                            var dllAudit = new DllAudit
-                            {
-                                DllName = Path.GetFileName(skip.FilePath),
-                                DllPath = skip.FilePath,
-                                StartedAt = DateTime.UtcNow,
-                                EndedAt = DateTime.UtcNow,
-                                DurationMs = 0,
-                                Status = "Failed",
-                                Result = skip.SkipCategory,
-                                Reason = skip.Reason,
-                                Exception = skip.Exception
-                            };
-                            folderAudit.Dlls.Add(dllAudit);
-                            folderAudit.Counts.Failed++;
+                            foreach (var i in dll.Interfaces)
+                                typeNodes.Add(new { i = i.Id, n = i.Name, fn = i.FullName, d = dll.Id, k = "Interface" });
+                        }
+                        if (dll.Structs != null)
+                        {
+                            foreach (var s in dll.Structs)
+                                typeNodes.Add(new { i = s.Id, n = s.Name, fn = s.FullName, d = dll.Id, k = "Struct" });
                         }
                     }
-                    //
-                    // Build lightweight graph
-                    //
-                    var lightGraph = new AssemblyGraph
+
+                    var masterGraphPayload = new
                     {
-                        References = graph.References,
-                        TypeReferences = graph.TypeReferences,
-                        Dlls = graph.Dlls
-                            .Select(d => new DllInfo
-                            {
-                                Id = d.Id,
-                                DllName = d.DllName,
-                                Version = d.Version,
-                                FilePath = d.FilePath,
-                                Metadata = d.Metadata,
-                                Dependencies = d.Dependencies
-                            })
-                            .ToList()
+                        version = 1,
+                        generatedAt = DateTime.UtcNow,
+                        stats = new
+                        {
+                            dllCount = graph.Dlls.Count,
+                            typeNodeCount = typeNodes.Count,
+                            dllRefCount = graph.References?.Count ?? 0,
+                            typeRefCount = graph.TypeReferences?.Count ?? 0
+                        },
+                        dlls = graph.Dlls.Select(d => new
+                        {
+                            id = d.Id,
+                            name = d.DllName,
+                            version = d.Version,
+                            detailFile = $"{d.Id}_{MakeSafeFileName(d.DllName)}.json"
+                        }),
+                        nodes = typeNodes,
+                        dllEdges = graph.References?.Select(r => new { s = r.SourceDllId, t = r.TargetDllId }),
+                        typeEdges = graph.TypeReferences?.Select(r => new
+                        {
+                            s = r.SourceTypeId,
+                            t = r.TargetTypeId,
+                            sd = r.SourceDllId,
+                            td = r.TargetDllId,
+                            k = r.ReferenceKind
+                        })
                     };
-                    //
-                    // Save master graph
-                    //
-                    var graphPath = Path.Combine(
-                        folderConfig.OutputPath,
-                        folderConfig.JsonFileName);
-                    var graphJson = JsonSerializer.Serialize(
-                        lightGraph,
-                        new JsonSerializerOptions
-                        {
-                            WriteIndented = true
-                        });
-                    File.WriteAllText(
-                        graphPath,
-                        graphJson);
+
+                    var masterGraphPath = Path.Combine(folderConfig.OutputPath, folderConfig.JsonFileName);
+                    var masterGraphJson = JsonSerializer.Serialize(masterGraphPayload, minifiedOptions);
+                    File.WriteAllText(masterGraphPath, masterGraphJson);
+
                     folderAudit.EndedAt = DateTime.UtcNow;
                     folderAudit.DurationMs = (long)(folderAudit.EndedAt.Value - folderAudit.StartedAt).TotalMilliseconds;
-                    Console.WriteLine(
-                        $"Master Graph Saved: {graphPath}");
-                    Console.WriteLine(
-                        $"DLL Count: {graph.Dlls.Count}");
-                    Console.WriteLine(
-                        $"Reference Count: {graph.References.Count}");
-                    Console.WriteLine(
-                        $"DLL Files Saved: {graph.Dlls.Count}");
+
+                    Console.WriteLine($"Master Graph Saved: {masterGraphPath}");
+                    Console.WriteLine($"Total Types Indexed: {typeNodes.Count}");
+                    Console.WriteLine($"Total Type Edges: {graph.TypeReferences?.Count ?? 0}");
                 }
                 catch (Exception ex)
                 {
                     folderAudit.EndedAt = DateTime.UtcNow;
                     folderAudit.DurationMs = (long)(folderAudit.EndedAt.Value - folderAudit.StartedAt).TotalMilliseconds;
-                    folderAudit.Counts.Failed = folderAudit.DllCount; // mark all as failed for this folder
-                    Console.WriteLine(
-                        $"ERROR: {ex.Message}");
+                    folderAudit.Counts.Failed = folderAudit.DllCount;
+                    Console.WriteLine($"ERROR: {ex.Message}");
                     folderAudit.Warnings.Add(ex.Message);
                 }
                 finally
