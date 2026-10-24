@@ -139,6 +139,7 @@ export interface TypeDetailItem {
   members: MemberItem[];
   enumValues: string[];
   signature?: string;
+  delegateParams: MemberParam[];
   attributes: AttributeItem[];
   isObsolete: boolean;
 }

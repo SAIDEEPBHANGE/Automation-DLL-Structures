@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, Card, CardContent, Chip, Grow, LinearProgress, Stack, Tooltip, Typography } from "@mui/material";
+import { Alert, Box, Card, CardContent, Chip, Grow, LinearProgress, Stack, Tooltip, Typography } from "@mui/material";
 import type { AuditPayload } from "../../types/audit";
 import {
   buildStatusDistribution,
@@ -68,6 +68,13 @@ export const AuditSummaryCards: React.FC<{ audit: AuditPayload }> = ({ audit }) 
             {audit.TargetFramework && <Chip size="small" label={audit.TargetFramework} />}
             {s.Warnings.length > 0 && <Chip size="small" color="warning" label={`${s.Warnings.length} warnings`} />}
           </Stack>
+          {s.Warnings.length > 0 && (
+            <Alert severity="warning" sx={{ mb: 1.5 }}>
+              {s.Warnings.map((w, i) => (
+                <div key={i}>{w}</div>
+              ))}
+            </Alert>
+          )}
           <Box
             sx={{
               display: "grid",

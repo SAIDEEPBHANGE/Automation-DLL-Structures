@@ -23,6 +23,7 @@ export interface AuditFilters {
   status: string;
   folder: string;
   text: string;
+  warningsOnly?: boolean;
 }
 
 export function filterAuditRows(rows: AuditDllRow[], f: AuditFilters): AuditDllRow[] {
@@ -31,6 +32,7 @@ export function filterAuditRows(rows: AuditDllRow[], f: AuditFilters): AuditDllR
     (r) =>
       (f.status === "all" || r.Status === f.status) &&
       (f.folder === "all" || r.folder === f.folder) &&
+      (!f.warningsOnly || (r.Warnings?.length ?? 0) > 0) &&
       (q === "" || r.DllName.toLowerCase().includes(q) || (r.Reason ?? "").toLowerCase().includes(q)),
   );
 }

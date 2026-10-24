@@ -93,7 +93,14 @@ This document provides sample output structures for the three main JSON outputs 
 		  "IsPublic": false,
 		  "IsStatic": false,
 		  "IsReadonly": true,
-		  "Attributes": []
+		  "Attributes": [
+			{
+			  "Name": "System.ComponentModel.DescriptionAttribute",
+			  "Arguments": {
+				"description": "Backing field for diagram name."
+			  }
+			}
+		  ]
 		}
 	  ],
 	  "Properties": [
@@ -121,7 +128,14 @@ This document provides sample output structures for the three main JSON outputs 
 			  "DefaultValue": null,
 			  "IsOut": false,
 			  "IsRef": false,
-			  "Attributes": []
+			  "Attributes": [
+				{
+				  "Name": "System.ComponentModel.DescriptionAttribute",
+				  "Arguments": {
+					"description": "Diagram payload."
+				  }
+				}
+			  ]
 			}
 		  ],
 		  "Attributes": [
@@ -149,7 +163,7 @@ This document provides sample output structures for the three main JSON outputs 
 	  "Namespace": "SmartPlant.Core",
 	  "FullName": "SmartPlant.Core.IDiagramService",
 	  "DeclaringType": null,
-	  "Methods": [
+		  "Methods": [
 		{
 		  "Name": "Save",
 		  "ReturnType": "System.Void",
@@ -166,10 +180,24 @@ This document provides sample output structures for the three main JSON outputs 
 			  "DefaultValue": null,
 			  "IsOut": false,
 			  "IsRef": false,
-			  "Attributes": []
+			  "Attributes": [
+				{
+				  "Name": "System.ComponentModel.DescriptionAttribute",
+				  "Arguments": {
+					"description": "Persisted diagram payload."
+				  }
+				}
+			  ]
 			}
 		  ],
-		  "Attributes": []
+		  "Attributes": [
+			{
+			  "Name": "System.Diagnostics.ConditionalAttribute",
+			  "Arguments": {
+				"conditionString": "TRACE"
+			  }
+			}
+		  ]
 		}
 	  ],
 	  "Properties": [
@@ -226,7 +254,23 @@ This document provides sample output structures for the three main JSON outputs 
 		  "DefaultValue": null,
 		  "IsOut": false,
 		  "IsRef": false,
-		  "Attributes": []
+		  "Attributes": [
+			{
+			  "Name": "System.ComponentModel.DataAnnotations.RangeAttribute",
+			  "Arguments": {
+				"minimum": "1",
+				"maximum": "2147483647"
+			  }
+			}
+		  ]
+		}
+	  ],
+	  "Attributes": [
+		{
+		  "Name": "System.ObsoleteAttribute",
+		  "Arguments": {
+			"message": "Use DiagramUpdatedHandler instead."
+		  }
 		}
 	  ]
 	}
@@ -258,7 +302,9 @@ This document provides sample output structures for the three main JSON outputs 
 	"Failed": 3,
 	"Skipped": 12,
 	"NativeFound": 3,
-	"Warnings": []
+	"Warnings": [
+	  "3 DLLs failed to load metadata."
+	]
   },
   "Folders": [
 	{
@@ -289,12 +335,26 @@ This document provides sample output structures for the three main JSON outputs 
 		  "Exception": null,
 		  "FileSizeBytes": null,
 		  "FileHash": null,
-		  "Steps": [],
-		  "Warnings": []
+		  "Steps": [
+			"Read PE headers",
+			"Loaded managed metadata",
+			"Exported detail JSON"
+		  ],
+		  "Warnings": [
+			"Referenced assembly 'Interop.SPFW' version mismatch."
+		  ]
 		}
 	  ],
-	  "NativeDlls": [],
-	  "Warnings": []
+	  "NativeDlls": [
+		{
+		  "DllName": "LegacyRenderer.Native.dll",
+		  "DllPath": "D:\\Off-Share\\P&ID Workstation\\bin\\LegacyRenderer.Native.dll",
+		  "Reason": "Native/Unmanaged DLL"
+		}
+	  ],
+	  "Warnings": [
+		"1 native DLL was skipped."
+	  ]
 	}
   ],
   "GeneratedAt": "2026-01-15T10:18:06Z"

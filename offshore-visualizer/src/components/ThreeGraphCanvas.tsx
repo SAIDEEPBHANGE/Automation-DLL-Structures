@@ -213,6 +213,12 @@ export const ThreeGraphCanvas: React.FC<ThreeGraphCanvasProps> = ({
     };
     animate();
 
+    const onVisibility = () => {
+      cancelAnimationFrame(raf);
+      if (!document.hidden) animate();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
     const observer = new ResizeObserver(() => {
       const w = container.clientWidth;
       const h = container.clientHeight;
@@ -225,6 +231,7 @@ export const ThreeGraphCanvas: React.FC<ThreeGraphCanvasProps> = ({
 
     return () => {
       cancelAnimationFrame(raf);
+      document.removeEventListener("visibilitychange", onVisibility);
       observer.disconnect();
       renderer.domElement.removeEventListener("pointerdown", onPointerDown);
       renderer.domElement.removeEventListener("click", onClick);

@@ -16,7 +16,7 @@ export interface AuditDll {
   Exception?: string | null;
   FileSizeBytes?: number | null;
   FileHash?: string | null;
-  Steps?: unknown[];
+  Steps?: string[] | null;
   Warnings?: string[];
 }
 

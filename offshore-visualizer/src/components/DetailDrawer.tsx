@@ -17,13 +17,14 @@ import {
   Tab,
   Tabs,
   TextField,
+  Tooltip,
   Typography,
   useMediaQuery,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import CloseIcon from "@mui/icons-material/Close";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
-import type { AttributeItem, DllDetailPayload, MemberItem, MemberKind, TypeDetailItem, TypeKind } from "../types/detail";
+import type { AttributeItem, DllDetailPayload, MemberItem, MemberKind, MemberParam, TypeDetailItem, TypeKind } from "../types/detail";
 import { NAV_HEIGHT, DRAWER_WIDTH } from "../theme";
 
 interface DetailDrawerProps {
@@ -66,35 +67,54 @@ const MEMBER_COLOR: Record<MemberKind, string> = {
 const TYPE_COLOR = "#5eead4";
 const MONO = { fontFamily: 'Consolas, "Cascadia Mono", monospace', fontSize: 12.5 };
 
+function formatAttribute(a: AttributeItem): string {
+  const args =
+    a.args.length === 1
+      ? a.args[0].value
+      : a.args.map((x) => `${x.key}=${x.value}`).join(", ");
+  return `[${a.name}${args ? `(${args})` : ""}]`;
+}
+
 const AttributeChips: React.FC<{ attributes: AttributeItem[] }> = ({ attributes }) => (
   <>
     {attributes.map((a, i) => {
-      const args = a.args.map((x) => (x.key.startsWith("Item") ? x.value : `${x.key}=${x.value}`)).join(", ");
+      const text = formatAttribute(a);
       return (
-        <Chip
-          key={`${a.name}-${i}`}
-          size="small"
-          color={a.name === "Obsolete" ? "warning" : "default"}
-          variant="outlined"
-          label={`[${a.name}${args ? `(${args})` : ""}]`}
-          sx={{ height: 18, fontSize: 10.5, maxWidth: "100%" }}
-        />
+        <Tooltip key={`${a.name}-${i}`} title={text} enterDelay={300}>
+          <Chip
+            size="small"
+            color={a.name === "Obsolete" ? "warning" : "default"}
+            variant="outlined"
+            label={text}
+            sx={{ height: 18, fontSize: 10.5, maxWidth: "100%" }}
+          />
+        </Tooltip>
       );
     })}
   </>
 );
 
+const ParamList: React.FC<{ params: MemberParam[] }> = ({ params }) => (
+  <Box>
+    {params.map((p, i) => (
+      <Box key={i} sx={{ pl: 2.5 }}>
+        {p.attributes.length > 0 && (
+          <Stack direction="row" sx={{ flexWrap: "wrap", gap: 0.5, my: 0.25 }}>
+            <AttributeChips attributes={p.attributes} />
+          </Stack>
+        )}
+        {p.modifier && <Box component="span" sx={{ color: "#f87171" }}>{p.modifier} </Box>}
+        <Box component="span" sx={{ color: TYPE_COLOR }}>{p.type}</Box>{" "}
+        <Box component="span" sx={{ color: "text.primary" }}>{p.name}</Box>
+        {p.optional && <Box component="span" sx={{ color: "text.secondary" }}> = optional</Box>}
+        {i < params.length - 1 && ","}
+      </Box>
+    ))}
+  </Box>
+);
+
 const MemberRow: React.FC<{ member: MemberItem }> = ({ member: m }) => {
   const stacked = m.params.length > 0;
-  const params = m.params.map((p, i) => (
-    <Box key={i} component="span" sx={{ display: stacked ? "block" : "inline", pl: stacked ? 2.5 : 0 }}>
-      {p.modifier && <Box component="span" sx={{ color: "#f87171" }}>{p.modifier} </Box>}
-      <Box component="span" sx={{ color: TYPE_COLOR }}>{p.type}</Box>{" "}
-      <Box component="span" sx={{ color: "text.primary" }}>{p.name}</Box>
-      {p.optional && <Box component="span" sx={{ color: "text.secondary" }}> = optional</Box>}
-      {i < m.params.length - 1 && ","}
-    </Box>
-  ));
 
   return (
     <Box
@@ -130,7 +150,7 @@ const MemberRow: React.FC<{ member: MemberItem }> = ({ member: m }) => {
         {m.kind === "Method" && (
           <>
             <Box component="span" sx={{ color: "text.secondary" }}>(</Box>
-            {stacked ? <Box>{params}</Box> : null}
+            {stacked ? <ParamList params={m.params} /> : null}
             <Box component="span" sx={{ color: "text.secondary" }}>)</Box>
           </>
         )}
@@ -151,7 +171,11 @@ const TypeCard: React.FC<{ item: TypeDetailItem }> = ({ item }) => {
       <AccordionSummary expandIcon={<ExpandMoreIcon />}>
         <Stack direction="row" spacing={1} sx={{ alignItems: "center", minWidth: 0 }}>
           <Chip size="small" label={item.kind} color={KIND_COLOR[item.kind]} variant="outlined" />
-          <Typography variant="body2" noWrap>
+          <Typography
+            variant="body2"
+            noWrap
+            sx={item.isObsolete ? { textDecoration: "line-through", opacity: 0.75 } : undefined}
+          >
             {item.name}
           </Typography>
         </Stack>
@@ -160,6 +184,11 @@ const TypeCard: React.FC<{ item: TypeDetailItem }> = ({ item }) => {
         <InfoRow label="Namespace" value={item.namespace} />
         <InfoRow label="Extends" value={item.baseType} />
         <InfoRow label="Signature" value={item.signature} />
+        {item.delegateParams.length > 0 && (
+          <Box sx={{ ...MONO, mb: 1 }}>
+            <ParamList params={item.delegateParams} />
+          </Box>
+        )}
         {(item.flags.length > 0 || item.attributes.length > 0) && (
           <Stack direction="row" sx={{ mb: 1, flexWrap: "wrap", gap: 0.5 }}>
             {item.flags.map((f) => (

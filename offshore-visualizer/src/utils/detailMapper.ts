@@ -155,6 +155,7 @@ function mapType(raw: RawType, kind: TypeKind): TypeDetailItem {
       kind === "Delegate"
         ? `${shortType(raw.ReturnType)} ${raw.Name}(${formatParams(raw.Parameters)})`
         : undefined,
+    delegateParams: kind === "Delegate" ? mapParams(raw.Parameters) : [],
     attributes,
     isObsolete: hasObsolete(attributes),
   };

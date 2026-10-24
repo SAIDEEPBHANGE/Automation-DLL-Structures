@@ -7,6 +7,9 @@ import {
   IconButton,
   MenuItem,
   Stack,
+  Step,
+  StepLabel,
+  Stepper,
   Table,
   TableBody,
   TableCell,
@@ -32,7 +35,14 @@ import {
 
 const Row: React.FC<{ row: AuditDllRow }> = ({ row }) => {
   const [open, setOpen] = useState(false);
-  const hasDetail = !!(row.Reason || row.Exception || row.Warnings?.length || row.FileHash || row.FileSizeBytes);
+  const hasDetail = !!(
+    row.Reason ||
+    row.Exception ||
+    row.Warnings?.length ||
+    row.Steps?.length ||
+    row.FileHash ||
+    row.FileSizeBytes
+  );
   return (
     <>
       <TableRow hover>
@@ -71,6 +81,15 @@ const Row: React.FC<{ row: AuditDllRow }> = ({ row }) => {
                   {row.Exception}
                 </Typography>
               )}
+              {(row.Steps ?? []).length > 0 && (
+                <Stepper orientation="vertical" sx={{ my: 0.5 }}>
+                  {(row.Steps ?? []).map((s, i) => (
+                    <Step key={`${s}-${i}`} active completed>
+                      <StepLabel slotProps={{ label: { sx: { fontSize: 12 } } }}>{s}</StepLabel>
+                    </Step>
+                  ))}
+                </Stepper>
+              )}
               {(row.Warnings ?? []).map((w) => (
                 <Typography key={w} variant="caption" color="warning.main">{w}</Typography>
               ))}
@@ -86,6 +105,7 @@ export const DllTable: React.FC<{ rows: AuditDllRow[]; folders: string[] }> = ({
   const [status, setStatus] = useState("all");
   const [folder, setFolder] = useState("all");
   const [text, setText] = useState("");
+  const [warningsOnly, setWarningsOnly] = useState(false);
   const [sortKey, setSortKey] = useState<AuditSortKey>("DurationMs");
   const [dir, setDir] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(0);
@@ -93,8 +113,8 @@ export const DllTable: React.FC<{ rows: AuditDllRow[]; folders: string[] }> = ({
 
   const statuses = useMemo(() => Array.from(new Set(rows.map((r) => r.Status))), [rows]);
   const processed = useMemo(
-    () => sortAuditRows(filterAuditRows(rows, { status, folder, text }), sortKey, dir),
-    [rows, status, folder, text, sortKey, dir],
+    () => sortAuditRows(filterAuditRows(rows, { status, folder, text, warningsOnly }), sortKey, dir),
+    [rows, status, folder, text, warningsOnly, sortKey, dir],
   );
   const pageRows = processed.slice(page * pageSize, page * pageSize + pageSize);
 
@@ -158,6 +178,16 @@ export const DllTable: React.FC<{ rows: AuditDllRow[]; folders: string[] }> = ({
             <MenuItem key={f} value={f}>{f}</MenuItem>
           ))}
         </TextField>
+        <Chip
+          label="Has warnings"
+          color="warning"
+          variant={warningsOnly ? "filled" : "outlined"}
+          onClick={() => {
+            setWarningsOnly((v) => !v);
+            setPage(0);
+          }}
+          sx={{ alignSelf: { xs: "flex-start", sm: "center" } }}
+        />
       </Stack>
       <TableContainer>
         <Table size="small">
