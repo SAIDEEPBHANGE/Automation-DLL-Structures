@@ -4,7 +4,8 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { Box, Paper, Typography } from "@mui/material";
 import type { MasterGraphPayload } from "../types/graph";
 import { buildAdjacency } from "../utils/graphUtils";
-import { isVendorDll } from "../utils/dllClassifier";
+import { getOrigin, ORIGIN_HEX, type DllOrigin } from "../utils/dllClassifier";
+import type { ColorMode } from "./FrameworkLegend";
 import {
   FRAMEWORK_HEX,
   FRAMEWORK_ORDER,
@@ -27,8 +28,13 @@ interface ThreeGraphCanvasProps {
   data: MasterGraphPayload | null;
   selectedNodeId: string | null;
   onNodeClick: (nodeId: string | null) => void;
-  colorMode?: "framework" | "default";
+  colorMode?: ColorMode;
 }
+
+const ORIGIN_THREE_COLORS: Record<DllOrigin, THREE.Color> = {
+  msil: new THREE.Color(ORIGIN_HEX.msil),
+  vendor: new THREE.Color(ORIGIN_HEX.vendor),
+};
 
 const FRAMEWORK_THREE_COLORS = Object.fromEntries(
   FRAMEWORK_ORDER.map((f) => {
@@ -53,7 +59,7 @@ export const ThreeGraphCanvas: React.FC<ThreeGraphCanvasProps> = ({
   data,
   selectedNodeId,
   onNodeClick,
-  colorMode = "framework",
+  colorMode = "origin",
 }) => {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -312,11 +318,11 @@ export const ThreeGraphCanvas: React.FC<ThreeGraphCanvasProps> = ({
       total,
     );
     const dummy = new THREE.Object3D();
-    data.dlls.forEach((dll, idx) => {
+    data.dlls.forEach((_dll, idx) => {
       dummy.position.copy(positions[idx]);
       dummy.updateMatrix();
       mesh.setMatrixAt(idx, dummy.matrix);
-      mesh.setColorAt(idx, isVendorDll(dll.name) ? COLORS.vendor : COLORS.normal);
+      mesh.setColorAt(idx, COLORS.normal);
     });
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
@@ -378,9 +384,13 @@ export const ThreeGraphCanvas: React.FC<ThreeGraphCanvasProps> = ({
     const target = targetScaleRef.current;
 
     const baseColor = (dll: { name: string; fw?: string | null }): THREE.Color => {
-      if (colorMode !== "framework") return isVendorDll(dll.name) ? COLORS.vendor : COLORS.normal;
-      const c = FRAMEWORK_THREE_COLORS[getDllFramework(dll)];
-      return isVendorDll(dll.name) ? c.vendor : c.normal;
+      const origin = getOrigin(dll.name);
+      if (colorMode === "origin") return ORIGIN_THREE_COLORS[origin];
+      if (colorMode === "framework") {
+        const c = FRAMEWORK_THREE_COLORS[getDllFramework(dll)];
+        return origin === "vendor" ? c.vendor : c.normal;
+      }
+      return origin === "vendor" ? COLORS.vendor : COLORS.normal;
     };
 
     data.dlls.forEach((dll, idx) => {

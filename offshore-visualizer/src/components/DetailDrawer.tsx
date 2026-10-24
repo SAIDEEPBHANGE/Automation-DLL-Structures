@@ -26,6 +26,7 @@ import CloseIcon from "@mui/icons-material/Close";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import type { AttributeItem, DllDetailPayload, MemberItem, MemberKind, MemberParam, TypeDetailItem, TypeKind, TypeLink } from "../types/detail";
 import { FRAMEWORK_LABEL, frameworkCss } from "../utils/frameworkUtils";
+import { hasAnyAttribute } from "../utils/detailMapper";
 import { NAV_HEIGHT, DRAWER_WIDTH } from "../theme";
 
 interface DetailDrawerProps {
@@ -87,7 +88,12 @@ const AttributeChips: React.FC<{ attributes: AttributeItem[] }> = ({ attributes 
             color={a.name === "Obsolete" ? "warning" : "default"}
             variant="outlined"
             label={text}
-            sx={{ height: 18, fontSize: 10.5, maxWidth: "100%" }}
+            sx={{
+              height: "auto",
+              maxWidth: "100%",
+              fontSize: 11,
+              "& .MuiChip-label": { whiteSpace: "normal", wordBreak: "break-word", py: 0.25 },
+            }}
           />
         </Tooltip>
       );
@@ -95,15 +101,28 @@ const AttributeChips: React.FC<{ attributes: AttributeItem[] }> = ({ attributes 
   </>
 );
 
+/** Labelled, wrapping attribute line; renders nothing when there are no attributes. */
+const AttributeLine: React.FC<{ attributes: AttributeItem[]; label?: string; sx?: object }> = ({
+  attributes,
+  label = "ATTRIBUTES",
+  sx,
+}) =>
+  attributes.length === 0 ? null : (
+    <Box sx={{ mb: 0.5, ...sx }}>
+      <Typography variant="caption" color="text.secondary" sx={{ fontSize: 10, letterSpacing: 0.5 }}>
+        {label}
+      </Typography>
+      <Stack direction="row" sx={{ flexWrap: "wrap", gap: 0.5 }}>
+        <AttributeChips attributes={attributes} />
+      </Stack>
+    </Box>
+  );
+
 const ParamList: React.FC<{ params: MemberParam[] }> = ({ params }) => (
-  <Box>
+  <Box sx={{ my: 0.5 }}>
     {params.map((p, i) => (
-      <Box key={i} sx={{ pl: 2.5 }}>
-        {p.attributes.length > 0 && (
-          <Stack direction="row" sx={{ flexWrap: "wrap", gap: 0.5, my: 0.25 }}>
-            <AttributeChips attributes={p.attributes} />
-          </Stack>
-        )}
+      <Box key={i} sx={{ pl: 2.5, py: 0.25 }}>
+        <AttributeLine attributes={p.attributes} label="PARAM ATTRIBUTES" sx={{ mb: 0.25 }} />
         {p.modifier && <Box component="span" sx={{ color: "#f87171" }}>{p.modifier} </Box>}
         <Box component="span" sx={{ color: TYPE_COLOR }}>{p.type}</Box>{" "}
         <Box component="span" sx={{ color: "text.primary" }}>{p.name}</Box>
@@ -123,8 +142,6 @@ const MemberRow: React.FC<{ member: MemberItem; onOpenType?: (name: string) => v
   member: m,
   onOpenType,
 }) => {
-  const stacked = m.params.length > 0;
-
   return (
     <Box
       sx={{
@@ -135,14 +152,14 @@ const MemberRow: React.FC<{ member: MemberItem; onOpenType?: (name: string) => v
         borderRadius: "0 6px 6px 0",
       }}
     >
-      {(m.flags.length > 0 || m.attributes.length > 0) && (
+      {m.flags.length > 0 && (
         <Stack direction="row" sx={{ mb: 0.5, flexWrap: "wrap", gap: 0.5 }}>
           {m.flags.map((f) => (
             <Chip key={f} size="small" label={f} sx={{ height: 18, fontSize: 10.5 }} />
           ))}
-          <AttributeChips attributes={m.attributes} />
         </Stack>
       )}
+      <AttributeLine attributes={m.attributes} />
       <Box
         sx={{
           ...MONO,
@@ -168,7 +185,11 @@ const MemberRow: React.FC<{ member: MemberItem; onOpenType?: (name: string) => v
         {m.kind === "Method" && (
           <>
             <Box component="span" sx={{ color: "text.secondary" }}>(</Box>
-            {stacked ? <ParamList params={m.params} /> : null}
+            {m.params.length > 0 ? (
+              <ParamList params={m.params} />
+            ) : (
+              <Box component="span" sx={{ color: "text.secondary", fontStyle: "italic" }}> no parameters </Box>
+            )}
             <Box component="span" sx={{ color: "text.secondary" }}>)</Box>
           </>
         )}
@@ -221,14 +242,14 @@ const TypeCard: React.FC<{
             <ParamList params={item.delegateParams} />
           </Box>
         )}
-        {(item.flags.length > 0 || item.attributes.length > 0) && (
+        {(item.flags.length > 0) && (
           <Stack direction="row" sx={{ mb: 1, flexWrap: "wrap", gap: 0.5 }}>
             {item.flags.map((f) => (
               <Chip key={f} size="small" label={f} />
             ))}
-            <AttributeChips attributes={item.attributes} />
           </Stack>
         )}
+        <AttributeLine attributes={item.attributes} sx={{ mb: 1 }} />
         {item.interfaces.length > 0 && (
           <InfoRow
             label={`${item.kind === "Interface" ? "Extends" : "Implements"} (${item.interfaces.length})`}
@@ -252,7 +273,7 @@ const TypeCard: React.FC<{
             <Typography variant="caption" sx={{ fontWeight: 700, color: MEMBER_COLOR[g.kind], letterSpacing: 0.5 }}>
               {g.kind.toUpperCase()}S ({g.items.length})
             </Typography>
-            <Stack spacing={0.75} sx={{ mt: 0.5, maxHeight: 360, overflowY: "auto", pr: 0.5 }}>
+            <Stack spacing={0.75} sx={{ mt: 0.5 }}>
               {g.items.map((m, i) => (
                 <MemberRow
                   key={`${m.name}-${i}`}
@@ -263,6 +284,11 @@ const TypeCard: React.FC<{
             </Stack>
           </Box>
         ))}
+        {item.kind === "Interface" && item.members.length === 0 && (
+          <Typography variant="caption" color="text.secondary" component="div" sx={{ mt: 1, fontStyle: "italic" }}>
+            Members not exported for this interface.
+          </Typography>
+        )}
       </AccordionDetails>
     </Accordion>
   );
@@ -332,6 +358,7 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({ isOpen, onClose, det
   const [kindFilter, setKindFilter] = useState<TypeKind | "All">("All");
   const [visible, setVisible] = useState(PAGE_SIZE);
   const [obsoleteOnly, setObsoleteOnly] = useState(false);
+  const [attrOnly, setAttrOnly] = useState(false);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
   const openType = (name: string) => {
@@ -351,9 +378,11 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({ isOpen, onClose, det
       (t) =>
         (kindFilter === "All" || t.kind === kindFilter) &&
         (!obsoleteOnly || t.isObsolete || t.members.some((m) => m.isObsolete)) &&
+        (!attrOnly || hasAnyAttribute(t)) &&
         (q === "" || t.name.toLowerCase().includes(q) || t.namespace.toLowerCase().includes(q)),
     );
-  }, [detail, typeSearch, kindFilter, obsoleteOnly]);
+  }, [detail, typeSearch, kindFilter, obsoleteOnly, attrOnly]);
+  const attrTypeCount = useMemo(() => (detail?.types ?? []).filter(hasAnyAttribute).length, [detail]);
 
   const totalTypes = detail?.types.length ?? 0;
 
@@ -530,6 +559,18 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({ isOpen, onClose, det
                         }}
                       />
                     ))}
+                    {attrTypeCount > 0 && (
+                      <Chip
+                        size="small"
+                        label={`With attributes (${attrTypeCount})`}
+                        color="info"
+                        variant={attrOnly ? "filled" : "outlined"}
+                        onClick={() => {
+                          setAttrOnly((v) => !v);
+                          setVisible(PAGE_SIZE);
+                        }}
+                      />
+                    )}
                     {detail.obsoleteCount > 0 && (
                       <Chip
                         size="small"

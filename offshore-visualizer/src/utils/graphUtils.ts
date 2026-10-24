@@ -1,14 +1,21 @@
 import type { MasterGraphPayload } from "../types/graph";
 import type { ConnectedDll } from "../types/detail";
 
-export type Suite = "SmartPlant3D" | "SmartPlantPID";
+export type Suite = "SmartPlant3D" | "SmartPlantPID" | "Sample";
+
+export const SUITES: Array<{ id: Suite; label: string }> = [
+  { id: "SmartPlant3D", label: "SmartPlant 3D" },
+  { id: "SmartPlantPID", label: "SmartPlant P&ID" },
+];
 
 export interface SearchOption {
   id: string;
   label: string;
 }
 
-export function buildAdjacency(data: MasterGraphPayload): Map<number, Set<number>> {
+export function buildAdjacency(
+  data: MasterGraphPayload,
+): Map<number, Set<number>> {
   const adjacency = new Map<number, Set<number>>();
   data.dlls.forEach((d) => adjacency.set(d.id, new Set()));
   data.dllEdges.forEach((e) => {
@@ -23,7 +30,10 @@ export function getConnectedDlls(
   id: number,
 ): { outbound: ConnectedDll[]; inbound: ConnectedDll[] } {
   const names = new Map(data.dlls.map((d) => [d.id, d.name]));
-  const toItem = (n: number): ConnectedDll => ({ id: n, name: names.get(n) ?? `DLL #${n}` });
+  const toItem = (n: number): ConnectedDll => ({
+    id: n,
+    name: names.get(n) ?? `DLL #${n}`,
+  });
   const outbound: ConnectedDll[] = [];
   const inbound: ConnectedDll[] = [];
   data.dllEdges.forEach((e) => {
@@ -33,9 +43,14 @@ export function getConnectedDlls(
   return { outbound, inbound };
 }
 
-export function buildSearchOptions(data: MasterGraphPayload | null): SearchOption[] {
+export function buildSearchOptions(
+  data: MasterGraphPayload | null,
+): SearchOption[] {
   if (!data) return [];
-  return data.dlls.map((d) => ({ id: String(d.id), label: `${d.name} (#${d.id})` }));
+  return data.dlls.map((d) => ({
+    id: String(d.id),
+    label: `${d.name} (#${d.id})`,
+  }));
 }
 
 export function getGraphStats(data: MasterGraphPayload | null) {

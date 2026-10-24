@@ -24,7 +24,7 @@ import HubIcon from "@mui/icons-material/Hub";
 import FactCheckIcon from "@mui/icons-material/FactCheck";
 import TableChartIcon from "@mui/icons-material/TableChart";
 import { NAV_HEIGHT } from "../theme";
-import type { SearchOption, Suite } from "../utils/graphUtils";
+import { SUITES, type SearchOption, type Suite } from "../utils/graphUtils";
 
 export type Page = "graph" | "table" | "audit";
 
@@ -68,8 +68,9 @@ export const Navbar: React.FC<NavbarProps> = ({
       onChange={(e) => onSuiteChange(e.target.value as Suite)}
       sx={{ minWidth: 150 }}
     >
-      <MenuItem value="SmartPlant3D">SmartPlant 3D</MenuItem>
-      <MenuItem value="SmartPlantPID">SmartPlant P&amp;ID</MenuItem>
+      {SUITES.map((s) => (
+        <MenuItem key={s.id} value={s.id}>{s.label}</MenuItem>
+      ))}
     </Select>
   );
 
@@ -190,16 +191,16 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <ListItemIcon><FactCheckIcon fontSize="small" /></ListItemIcon>
                 <ListItemText>Audit</ListItemText>
               </MenuItem>
-              {(["SmartPlant3D", "SmartPlantPID"] as Suite[]).map((s) => (
+              {SUITES.map((s) => (
                 <MenuItem
-                  key={s}
-                  selected={s === currentSuite}
+                  key={s.id}
+                  selected={s.id === currentSuite}
                   onClick={() => {
-                    onSuiteChange(s);
+                    onSuiteChange(s.id);
                     setMenuAnchor(null);
                   }}
                 >
-                  <ListItemText inset>{s === "SmartPlant3D" ? "SmartPlant 3D" : "SmartPlant P&ID"}</ListItemText>
+                  <ListItemText inset>{s.label}</ListItemText>
                 </MenuItem>
               ))}
             </Menu>

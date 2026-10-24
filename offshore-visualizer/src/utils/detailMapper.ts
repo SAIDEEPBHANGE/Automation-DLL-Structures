@@ -44,6 +44,14 @@ export function mapAttributes(raw: RawAttribute[] | null | undefined): Attribute
   }));
 }
 
+export function hasAnyAttribute(t: TypeDetailItem): boolean {
+  return (
+    t.attributes.length > 0 ||
+    t.delegateParams.some((p) => p.attributes.length > 0) ||
+    t.members.some((m) => m.attributes.length > 0 || m.params.some((p) => p.attributes.length > 0))
+  );
+}
+
 export function hasObsolete(attrs: AttributeItem[]): boolean {
   return attrs.some((a) => a.name === "Obsolete");
 }

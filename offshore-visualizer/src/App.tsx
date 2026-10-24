@@ -8,7 +8,8 @@ import { Loader } from "./components/Loader";
 import { DetailDrawer } from "./components/DetailDrawer";
 import { AuditPage } from "./pages/AuditPage";
 import { GraphTablePage } from "./pages/GraphTablePage";
-import { FrameworkLegend } from "./components/FrameworkLegend";
+import { FrameworkLegend, type ColorMode } from "./components/FrameworkLegend";
+import { getOrigin, type DllOrigin } from "./utils/dllClassifier";
 import { countFrameworks } from "./utils/frameworkUtils";
 import { fetchJson } from "./utils/fetchUtils";
 import { buildInitialDetail, mapDllDetail } from "./utils/detailMapper";
@@ -73,8 +74,13 @@ export const App: React.FC = () => {
 
   const searchOptions = useMemo(() => buildSearchOptions(data), [data]);
   const stats = useMemo(() => getGraphStats(data), [data]);
-  const [colorMode, setColorMode] = useState<"framework" | "default">("framework");
+  const [colorMode, setColorMode] = useState<ColorMode>("origin");
   const frameworkCounts = useMemo(() => countFrameworks(data), [data]);
+  const originCounts = useMemo(() => {
+    const c: Record<DllOrigin, number> = { msil: 0, vendor: 0 };
+    data?.dlls.forEach((d) => (c[getOrigin(d.name)] += 1));
+    return c;
+  }, [data]);
 
   const handleNodeClick = useCallback((nodeId: string | null) => {
     setSelectedNode(nodeId);
@@ -107,7 +113,12 @@ export const App: React.FC = () => {
                 onNodeClick={handleNodeClick}
                 colorMode={colorMode}
               />
-              <FrameworkLegend counts={frameworkCounts} colorMode={colorMode} onColorModeChange={setColorMode} />
+              <FrameworkLegend
+                originCounts={originCounts}
+                frameworkCounts={frameworkCounts}
+                colorMode={colorMode}
+                onColorModeChange={setColorMode}
+              />
               <Loader
                 open={isLoading}
                 message={`Loading ${selectedSuite}...`}
