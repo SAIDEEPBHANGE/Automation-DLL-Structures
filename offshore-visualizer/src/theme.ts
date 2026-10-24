@@ -1,6 +1,7 @@
 import { createTheme } from "@mui/material/styles";
 
 export const NAV_HEIGHT = 64;
+export const DRAWER_WIDTH = 680;
 
 export const theme = createTheme({
   palette: {

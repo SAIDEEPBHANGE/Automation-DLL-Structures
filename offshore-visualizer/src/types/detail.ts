@@ -83,10 +83,21 @@ export interface RawDllDetail {
 /* View models used by the UI */
 export type MemberKind = "Method" | "Property" | "Field" | "Event";
 
+export interface MemberParam {
+  type: string;
+  name: string;
+  modifier?: "out" | "ref";
+  optional: boolean;
+}
+
 export interface MemberItem {
   name: string;
   kind: MemberKind;
+  /** Single-line text form, used for search/copy. */
   signature: string;
+  returnType?: string;
+  params: MemberParam[];
+  accessors?: string;
   flags: string[];
 }
 

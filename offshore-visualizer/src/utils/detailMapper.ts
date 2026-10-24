@@ -2,6 +2,7 @@ import type {
   ConnectedDll,
   DllDetailPayload,
   MemberItem,
+  MemberParam,
   RawDllDetail,
   RawParameter,
   RawType,
@@ -12,18 +13,24 @@ import type { MasterGraphPayload } from "../types/graph";
 import { getArchitectureLabel } from "./dllClassifier";
 import { getConnectedDlls } from "./graphUtils";
 
-/** Strips namespaces: System.Collections.Generic.List`1 -> List`1 */
+/** Strips namespaces and generic arity: System.Collections.Generic.List`1 -> List */
 export function shortType(t: string | undefined | null): string {
   if (!t) return "";
-  return t.replace(/\b(?:\w+\.)+(\w+)/g, "$1");
+  return t.replace(/`\d+/g, "").replace(/\b(?:\w+\.)+(\w+)/g, "$1");
+}
+
+function mapParams(params: RawParameter[] | undefined): MemberParam[] {
+  return (params ?? []).map((p) => ({
+    type: shortType(p.Type),
+    name: p.Name,
+    modifier: p.IsOut ? "out" : p.IsRef ? "ref" : undefined,
+    optional: !!p.IsOptional,
+  }));
 }
 
 function formatParams(params: RawParameter[] | undefined): string {
-  return (params ?? [])
-    .map((p) => {
-      const mod = p.IsOut ? "out " : p.IsRef ? "ref " : "";
-      return `${mod}${shortType(p.Type)} ${p.Name}${p.IsOptional ? "?" : ""}`;
-    })
+  return mapParams(params)
+    .map((p) => `${p.modifier ? `${p.modifier} ` : ""}${p.type} ${p.name}${p.optional ? "?" : ""}`)
     .join(", ");
 }
 
@@ -34,12 +41,27 @@ function mapMembers(raw: RawType): MemberItem[] {
     const flags = [f.IsPublic ? "public" : "private"];
     if (f.IsStatic) flags.push("static");
     if (f.IsReadonly) flags.push("readonly");
-    members.push({ name: f.Name, kind: "Field", signature: `${shortType(f.Type)} ${f.Name}`, flags });
+    members.push({
+      name: f.Name,
+      kind: "Field",
+      signature: `${shortType(f.Type)} ${f.Name}`,
+      returnType: shortType(f.Type),
+      params: [],
+      flags,
+    });
   });
 
   (raw.Properties ?? []).forEach((p) => {
-    const acc = `{ ${p.CanRead ? "get; " : ""}${p.CanWrite ? "set; " : ""}}`;
-    members.push({ name: p.Name, kind: "Property", signature: `${shortType(p.Type)} ${p.Name} ${acc}`, flags: [] });
+    const acc = [p.CanRead ? "get" : "", p.CanWrite ? "set" : ""].filter(Boolean).join("; ");
+    members.push({
+      name: p.Name,
+      kind: "Property",
+      signature: `${shortType(p.Type)} ${p.Name} { ${acc}; }`,
+      returnType: shortType(p.Type),
+      params: [],
+      accessors: acc ? `{ ${acc}; }` : undefined,
+      flags: [],
+    });
   });
 
   (raw.Methods ?? []).forEach((m) => {
@@ -47,11 +69,14 @@ function mapMembers(raw: RawType): MemberItem[] {
     if (m.IsStatic) flags.push("static");
     if (m.IsAbstract) flags.push("abstract");
     else if (m.IsVirtual) flags.push("virtual");
+    if (m.IsConstructor) flags.push("constructor");
     const ret = m.IsConstructor ? "" : `${shortType(m.ReturnType)} `;
     members.push({
-      name: m.Name,
+      name: m.IsConstructor ? raw.Name : m.Name,
       kind: "Method",
       signature: `${ret}${m.Name}(${formatParams(m.Parameters)})`,
+      returnType: m.IsConstructor ? undefined : shortType(m.ReturnType),
+      params: mapParams(m.Parameters),
       flags,
     });
   });
@@ -61,6 +86,8 @@ function mapMembers(raw: RawType): MemberItem[] {
       name: e.Name,
       kind: "Event",
       signature: `${shortType(e.Type ?? e.EventType)} ${e.Name}`.trim(),
+      returnType: shortType(e.Type ?? e.EventType) || undefined,
+      params: [],
       flags: [],
     });
   });

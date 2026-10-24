@@ -21,10 +21,11 @@ import { useTheme } from "@mui/material/styles";
 import MenuIcon from "@mui/icons-material/Menu";
 import HubIcon from "@mui/icons-material/Hub";
 import FactCheckIcon from "@mui/icons-material/FactCheck";
+import TableChartIcon from "@mui/icons-material/TableChart";
 import { NAV_HEIGHT } from "../theme";
 import type { SearchOption, Suite } from "../utils/graphUtils";
 
-export type Page = "graph" | "audit";
+export type Page = "graph" | "table" | "audit";
 
 interface NavbarProps {
   page: Page;
@@ -97,6 +98,14 @@ export const Navbar: React.FC<NavbarProps> = ({
               Graph
             </Button>
             <Button
+              startIcon={<TableChartIcon />}
+              color={page === "table" ? "primary" : "inherit"}
+              variant={page === "table" ? "outlined" : "text"}
+              onClick={() => onPageChange("table")}
+            >
+              Table
+            </Button>
+            <Button
               startIcon={<FactCheckIcon />}
               color={page === "audit" ? "primary" : "inherit"}
               variant={page === "audit" ? "outlined" : "text"}
@@ -140,6 +149,16 @@ export const Navbar: React.FC<NavbarProps> = ({
               >
                 <ListItemIcon><HubIcon fontSize="small" /></ListItemIcon>
                 <ListItemText>Graph</ListItemText>
+              </MenuItem>
+              <MenuItem
+                selected={page === "table"}
+                onClick={() => {
+                  onPageChange("table");
+                  setMenuAnchor(null);
+                }}
+              >
+                <ListItemIcon><TableChartIcon fontSize="small" /></ListItemIcon>
+                <ListItemText>Table</ListItemText>
               </MenuItem>
               <MenuItem
                 selected={page === "audit"}

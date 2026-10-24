@@ -7,6 +7,7 @@ import { Navbar, type Page } from "./components/Navbar";
 import { Loader } from "./components/Loader";
 import { DetailDrawer } from "./components/DetailDrawer";
 import { AuditPage } from "./pages/AuditPage";
+import { GraphTablePage } from "./pages/GraphTablePage";
 import { fetchJson } from "./utils/fetchUtils";
 import { buildInitialDetail, mapDllDetail } from "./utils/detailMapper";
 import { buildSearchOptions, getGraphStats, resolveDetailUrl, type Suite } from "./utils/graphUtils";
@@ -25,7 +26,7 @@ export const App: React.FC = () => {
   const handleSuiteChange = useCallback((suite: Suite) => {
     setSelectedNode(null);
     setSelectedSuite(suite);
-    setPage("graph");
+    setPage((p) => (p === "audit" ? "graph" : p));
   }, []);
 
   useEffect(() => {
@@ -76,7 +77,7 @@ export const App: React.FC = () => {
   }, []);
 
   const handleSearchSelect = useCallback((nodeId: string) => {
-    setPage("graph");
+    setPage((p) => (p === "audit" ? "graph" : p));
     setSelectedNode(nodeId);
   }, []);
 
@@ -104,6 +105,18 @@ export const App: React.FC = () => {
               />
             </Box>
           </Fade>
+        ) : page === "table" ? (
+          <Fade in key="table" timeout={400}>
+            <Box sx={{ position: "absolute", inset: 0 }}>
+              <GraphTablePage
+                data={data}
+                isLoading={isLoading}
+                selectedNodeId={selectedNode}
+                onSelectNode={handleNodeClick}
+                drawerOpen={!!selectedNode}
+              />
+            </Box>
+          </Fade>
         ) : (
           <Fade in key="audit" timeout={400}>
             <Box sx={{ position: "absolute", inset: 0 }}>
@@ -114,7 +127,7 @@ export const App: React.FC = () => {
       </Box>
 
       <DetailDrawer
-        isOpen={page === "graph" && !!selectedNode}
+        isOpen={page !== "audit" && !!selectedNode}
         onClose={() => setSelectedNode(null)}
         detail={nodeDetail}
         isLoading={isDetailLoading}

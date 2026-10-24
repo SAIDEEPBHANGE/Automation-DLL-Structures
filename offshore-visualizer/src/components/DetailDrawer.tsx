@@ -23,8 +23,8 @@ import {
 import { useTheme } from "@mui/material/styles";
 import CloseIcon from "@mui/icons-material/Close";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
-import type { DllDetailPayload, MemberKind, TypeDetailItem, TypeKind } from "../types/detail";
-import { NAV_HEIGHT } from "../theme";
+import type { DllDetailPayload, MemberItem, MemberKind, TypeDetailItem, TypeKind } from "../types/detail";
+import { NAV_HEIGHT, DRAWER_WIDTH } from "../theme";
 
 interface DetailDrawerProps {
   isOpen: boolean;
@@ -56,6 +56,66 @@ const InfoRow: React.FC<{ label: string; value?: string }> = ({ label, value }) 
       </Typography>
     </Box>
   ) : null;
+
+const MEMBER_COLOR: Record<MemberKind, string> = {
+  Method: "#38bdf8",
+  Property: "#a78bfa",
+  Field: "#fbbf24",
+  Event: "#f472b6",
+};
+const TYPE_COLOR = "#5eead4";
+const MONO = { fontFamily: 'Consolas, "Cascadia Mono", monospace', fontSize: 12.5 };
+
+const MemberRow: React.FC<{ member: MemberItem }> = ({ member: m }) => {
+  const stacked = m.params.length > 0;
+  const params = m.params.map((p, i) => (
+    <Box key={i} component="span" sx={{ display: stacked ? "block" : "inline", pl: stacked ? 2.5 : 0 }}>
+      {p.modifier && <Box component="span" sx={{ color: "#f87171" }}>{p.modifier} </Box>}
+      <Box component="span" sx={{ color: TYPE_COLOR }}>{p.type}</Box>{" "}
+      <Box component="span" sx={{ color: "text.primary" }}>{p.name}</Box>
+      {p.optional && <Box component="span" sx={{ color: "text.secondary" }}> = optional</Box>}
+      {i < m.params.length - 1 && ","}
+    </Box>
+  ));
+
+  return (
+    <Box
+      sx={{
+        p: 1,
+        borderLeft: 3,
+        borderColor: MEMBER_COLOR[m.kind],
+        bgcolor: "rgba(148, 163, 184, 0.06)",
+        borderRadius: "0 6px 6px 0",
+      }}
+    >
+      {m.flags.length > 0 && (
+        <Stack direction="row" sx={{ mb: 0.5, flexWrap: "wrap", gap: 0.5 }}>
+          {m.flags.map((f) => (
+            <Chip key={f} size="small" label={f} sx={{ height: 18, fontSize: 10.5 }} />
+          ))}
+        </Stack>
+      )}
+      <Box sx={{ ...MONO, wordBreak: "break-word" }}>
+        {m.returnType && (
+          <Box component="span" sx={{ color: TYPE_COLOR }}>
+            {m.returnType}{" "}
+          </Box>
+        )}
+        <Box component="span" sx={{ color: "text.primary", fontWeight: 700 }}>{m.name}</Box>
+        {m.kind === "Method" && (
+          <>
+            <Box component="span" sx={{ color: "text.secondary" }}>(</Box>
+            {stacked ? <Box>{params}</Box> : null}
+            <Box component="span" sx={{ color: "text.secondary" }}>)</Box>
+          </>
+        )}
+        {m.accessors && (
+          <Box component="span" sx={{ color: "text.secondary" }}> {m.accessors}</Box>
+        )}
+      </Box>
+    </Box>
+  );
+};
 
 const TypeCard: React.FC<{ item: TypeDetailItem }> = ({ item }) => {
   const grouped = MEMBER_ORDER.map((k) => ({ kind: k, items: item.members.filter((m) => m.kind === k) })).filter(
@@ -98,27 +158,15 @@ const TypeCard: React.FC<{ item: TypeDetailItem }> = ({ item }) => {
           </Box>
         )}
         {grouped.map((g) => (
-          <Box key={g.kind} sx={{ mt: 1 }}>
-            <Typography variant="caption" color="primary" sx={{ fontWeight: 600 }}>
-              {g.kind}s ({g.items.length})
+          <Box key={g.kind} sx={{ mt: 1.5 }}>
+            <Typography variant="caption" sx={{ fontWeight: 700, color: MEMBER_COLOR[g.kind], letterSpacing: 0.5 }}>
+              {g.kind.toUpperCase()}S ({g.items.length})
             </Typography>
-            <Box sx={{ maxHeight: 200, overflowY: "auto" }}>
+            <Stack spacing={0.75} sx={{ mt: 0.5, maxHeight: 360, overflowY: "auto", pr: 0.5 }}>
               {g.items.map((m, i) => (
-                <Typography
-                  key={`${m.name}-${i}`}
-                  variant="caption"
-                  component="div"
-                  sx={{ fontFamily: "monospace", py: 0.25, wordBreak: "break-word" }}
-                >
-                  {m.signature}
-                  {m.flags.length > 0 && (
-                    <Box component="span" sx={{ color: "text.secondary" }}>
-                      {"  "}[{m.flags.join(", ")}]
-                    </Box>
-                  )}
-                </Typography>
+                <MemberRow key={`${m.name}-${i}`} member={m} />
               ))}
-            </Box>
+            </Stack>
           </Box>
         ))}
       </AccordionDetails>
@@ -174,7 +222,8 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({ isOpen, onClose, det
       slotProps={{
         paper: {
           sx: {
-            width: isDesktop ? 440 : "100%",
+            width: isDesktop ? DRAWER_WIDTH : "100%",
+            maxWidth: "100%",
             height: isDesktop ? `calc(100% - ${NAV_HEIGHT}px)` : "70vh",
             top: isDesktop ? NAV_HEIGHT : "auto",
             bgcolor: "rgba(15, 23, 42, 0.97)",
