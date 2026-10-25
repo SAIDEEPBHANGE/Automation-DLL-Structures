@@ -1,77 +1,109 @@
-### Plan of Action (Implementation Status)
+### Plan of Action
 
-Reference: `SampleJsonStructure.md`.
+Reference: `SampleJsonStructure.md`. Plan only; no code for the Search page is written yet.
 
-Implemented on 2026-10-25: canvas/table split layout with a docked desktop detail panel, mobile swipeable detail sheet, empty suite summary, responsive selection flows, cross-fade detail changes, reduced-motion handling, and Origin / Default canvas colour modes. Framework classification remains available in the detail panel and table.
-
-Validation: `npm run lint` and `npm run build` pass. The mapper fixture test remains blocked: `public/data/Sample/Dlls/3_SmartPlant.PID.json` is not present, and the visualizer has no source-level test harness.
-
-Done and removed: foundations, Navbar (Graph / Table / Audit), audit page, Table page, drawer (attributes on fields / params / methods / interface methods, Obsolete, delegates, type links, event jump, "With attributes" and "Obsolete only" filters, "no parameters" and "not exported" notes), "Sample" fixture suite, Origin colouring (MSIL blue / Vendor orange) with the shared `getOrigin` classifier, render loop pause. `tsc`, `eslint` and `vite build` pass.
+Completed work (split layout, detail panel/sheet, colour modes, base-path fetch, earlier suites) has been removed from this document. `npm run lint` and `npm run build` pass.
 
 ---
 
-#### 1. New layout: canvas right, drawer always visible (desktop)
+#### 1. Goal: new "Search" page
 
-Today the drawer is a temporary overlay that opens on node click. New behaviour:
+A fourth Navbar page (Graph / Table / **Search** / Audit) to find anything across every DLL detail JSON of the selected suite, and show exactly *where* each match was found.
 
-| Screen | Layout |
+**Search input**
+- One text box; matches **names** and **descriptions** (case-insensitive, substring; optional `Aa` case toggle and `.*` regex toggle later).
+- Descriptions come from `DescriptionAttribute` arguments (and any attribute argument values), because detail JSON has no separate description field. Confirm with the backend owner if a dedicated `Description` field will be exported.
+
+**Match scopes (what is searched)** - each result row is tagged with one of these:
+
+| Scope | Source field |
 |---|---|
-| Desktop / laptop (`md` and up, >= 900 px) | Split view on the Graph page: **detail panel on the left (30 %)**, **3D canvas on the right (70 %)**. The panel is always visible. |
-| Mobile / tablet (< 900 px) | Canvas is full width. The detail panel is a modal bottom sheet that opens on node click and closes with a close button / swipe / backdrop. A floating "Details" button reopens it for the last selected node. |
+| DLL | `DllName`, `Metadata.AssemblyName`, `FilePath`, `Version` |
+| Reference | `Dependencies[].AssemblyName` |
+| Class / Interface / Struct / Enum / Delegate | `Name`, `FullName`, `Namespace`, `BaseType`, `DeclaringType`, `ImplementedInterfaces[]`, enum `Values[]` |
+| Method | `Name`, `ReturnType` |
+| Parameter | `Name`, `Type`, `DefaultValue` |
+| Property | `Name`, `Type` |
+| Field | `Name`, `Type` |
+| Event | `Name`, `Type` / `EventType` |
+| Attribute | `Name`, argument keys and values (this is where descriptions are found) |
 
-Notes
-- "Canvas to the right side" is read as: panel left, canvas right. If you meant the opposite, only the flex order changes.
-- Table page: same split (table on the right 70 %, panel left 30 %) so both pages behave alike. Audit page stays full width, no panel.
-- When no node is selected, the panel shows an empty state: suite summary (DLL count, edges, generated date, origin counts) and a hint "Click a node or search to see details".
+**Result table** (one row per match)
 
-#### 2. Tasks
+| Column | Notes |
+|---|---|
+| Found in | scope chip: Class, Interface, Method, Parameter, Field, ... (colour per scope) |
+| Matched text | the matched field with the hit **highlighted**, plus which field matched (Name / Type / Description ...) |
+| Member | member name and signature, when the match is inside a member |
+| Type | owning type name, kind, namespace |
+| DLL | assembly name and `#id`; click selects it and opens the detail panel |
 
-**A. Layout (App + theme)**
-1. `theme.ts`: remove the fixed `DRAWER_WIDTH`; add `PANEL_WIDTH_PERCENT = 30` and breakpoint constant `SPLIT_BREAKPOINT = "md"`.
-2. `App.tsx`: wrap the Graph and Table pages in a `SplitLayout` (new `src/components/SplitLayout.tsx`): MUI `Box` flex row, panel `flexBasis: 30 %` (min 340 px, max 560 px), content `flex: 1`, height `calc(100vh - NAV_HEIGHT)`, each pane scrolls independently.
-3. Use `useMediaQuery(theme.breakpoints.up("md"))` once in `App` and pass `isDesktop` down.
-4. Canvas resize: `ThreeGraphCanvas` already uses a `ResizeObserver`; verify it re-fits when the pane width changes (no window-resize dependence). Remove the right padding hacks in `GraphTablePage`.
-5. Camera focus: the selected node centres in the visible 70 % pane, so no offset for the old overlay is needed (remove it if present).
+Filters: scope multi-select, kind (Class / Interface / Struct / Enum / Delegate), origin (MSIL / Vendor), "Names only" / "Descriptions only", DLL (typeahead). Sort: relevance (exact > prefix > substring, name hits above description hits), DLL, type, scope. Summary strip above the table: "1,284 matches in 96 DLLs" with per-scope counts that double as filters.
 
-**B. Detail panel (`DetailDrawer.tsx`)**
-1. Split the component: `DetailContent` (header, tabs, cards; layout-agnostic) and thin wrappers: `DetailPanel` (docked, desktop) and `DetailSheet` (MUI `Drawer anchor="bottom"`, temporary, mobile, 85 vh, with a drag-handle bar and close icon).
-2. Desktop: no close button needed; a "Clear selection" icon returns to the empty state.
-3. Remove the width toggle task (obsolete: width is now 30 %); drop the `localStorage` idea.
-4. Empty-state component (`DetailEmpty`) described in section 1.
-5. Selected node and search keep working; selecting from the Table row also fills the panel.
-
-**C. Colour modes (graph canvas)**
-1. Remove the **Framework** option and its legend rows from the canvas toggle; modes are only `Origin` (default) and `Default`. Do not change Origin or Default behaviour.
-2. `ColorMode = "origin" | "default"`; delete `FRAMEWORK_THREE_COLORS` and `getDllFramework` use inside `ThreeGraphCanvas`, and the `frameworkCounts` computation in `App`.
-3. Legend becomes `ColorLegend` (rename from `FrameworkLegend`): the two-option toggle and the Origin rows only.
-4. Keep framework data elsewhere (drawer chip, Table Framework column and filter) because the user only asked to remove it from the canvas; confirm if those should go as well.
-5. Move the legend so it does not overlap the panel: stay at the canvas bottom-left (now inside the 70 % pane).
-
-**D. Responsive and animation**
-1. Mobile sheet slide-up transition (MUI default); respect `prefers-reduced-motion`.
-2. Panel content cross-fades when the selected node changes (`Fade`, 150 ms).
-3. Breakpoint tests: 360, 768, 1024, 1440 px; the 30 % panel never gets narrower than 340 px (below that width use the sheet).
-
-**E. Cleanup and validation**
-1. Remove now-unused code: drawer overlay props, `DRAWER_WIDTH` imports, framework canvas pieces.
-2. Update the mapper fixture test (still pending) to run on `public/data/Sample/Dlls/3_SmartPlant.PID.json` asserting attributes, `DeclaringType`, `DefaultValue`, event type and type links.
-3. `npx tsc -b`, `npx eslint src`, `npx vite build`; manual browser check on both suites and the Sample suite.
+Row click: panel on the left shows the DLL, switches to the Types tab, expands and scrolls to the matched type (reuse `openType`), and jumps the Graph camera to the DLL.
 
 ---
 
-#### 3. Leftovers
+#### 2. Performance strategy (search must never lag)
 
-- Backend: `fw` per DLL (no longer used by the canvas, still used by the drawer / table); export interface methods and attributes for all DLLs; regenerate `public/data`.
+Naive per-keystroke scanning of ~1,300 detail files (many MB) on the main thread would freeze the UI. Layers, in order of impact:
+
+1. **Web Worker** owns loading, indexing and querying. The main thread only sends the query and receives results; typing and scrolling stay smooth.
+2. **Lazy, progressive indexing.** Fetch detail files in the worker with a small concurrency pool (6) after the user first opens the Search page (or on idle when the app starts). Show progress ("Indexed 412 / 1,345 DLLs") and let search run on what is already indexed, flagged "partial results".
+3. **Flat compact index**, built once per suite: parallel arrays of lower-cased strings plus numeric scope / DLL / type / member ids (no nested objects, no repeated JSON traversal). Strings are stored once per document row.
+4. **Inverted token index** (tokens split on case changes, `.`, `_`, `<`, `>`, `,`) to get candidate rows for queries of 3+ chars; fall back to a linear scan of the flat array only for 1-2 char queries or for regex.
+5. **Debounce and cancel.** 150 ms debounce; each query carries an id, the worker abandons stale queries (checks the id every ~5k rows) and only the newest result is applied.
+6. **Cap and paginate.** The worker returns the top 500 by relevance plus total counts per scope; "Load more" fetches the next page. Counts are computed during the scan, not from the returned rows.
+7. **Virtualised table** (render only visible rows, ~30 DOM rows) so thousands of results do not lag; highlight spans are built only for visible rows.
+8. **React side:** `useDeferredValue` / `startTransition` for result updates; input state is separate from the query state; memoised row components.
+9. **Cache.** Keep the built index in memory per suite; optionally persist to IndexedDB with a key of suite + `generatedAt` so a revisit does not refetch or reindex. Invalidate when `generatedAt` changes.
+10. **Optional backend assist (later):** export one `search-index.json` per suite (flat rows: scope, text, dllId, type, member) so the browser downloads a single compressed file instead of 1,300 detail files. Biggest win for first-load time; frontend can fall back to step 2 if the file is missing.
+
+Targets: typing latency under 50 ms on the main thread; query response under 100 ms once indexed; first usable results within about 2 s of opening the page.
+
+---
+
+#### 3. Tasks
+
+**A. Foundations**
+1. `src/types/search.ts`: `SearchScope`, `SearchRow`, `SearchQuery`, `SearchResult`, worker message types.
+2. `src/utils/searchIndex.ts`: pure functions: `flattenDll(raw)` (rows per scope above), `tokenize`, `buildIndex`, `runQuery` (candidate lookup, scoring, scope counts, paging). No DOM / React so it is testable.
+3. `src/workers/searchWorker.ts`: loads files with a concurrency pool (reuse `resolveDetailUrl` and base-path fetch), reports progress, answers queries, supports cancel.
+
+**B. Page and UI**
+1. `src/pages/SearchPage.tsx`: search box (autofocus, clear button, `/` shortcut), scope chips with counts, filters, progress bar, empty / no-match / loading states.
+2. `src/components/search/SearchResultsTable.tsx`: virtualised table, highlight component, scope chips, row click handler. Add a small virtualisation dependency only if hand-rolled windowing is not enough.
+3. `Navbar.tsx`: add `Search` to `Page` type, buttons and the mobile menu; `App.tsx`: route the page, use the shared `SplitLayout` so the left panel still shows the clicked DLL.
+4. Click-through: select node, open Types tab, expand matched type (extend `DetailContent` with an optional `focusType` prop).
+
+**C. Quality**
+1. Unit tests for `flattenDll` / `runQuery` (needs a test runner; add Vitest) using a small inline fixture covering class, interface, method, parameter, field, event and a `DescriptionAttribute`.
+2. Performance check: full SmartPlant 3D suite, record index time, memory, and query latency for 1, 3 and 10 character queries.
+3. Responsive check at 360 / 768 / 1024 / 1440 px (results become stacked cards below 600 px).
+4. `npm run lint`, `npm run build`, manual browser pass on both suites.
+
+---
+
+#### 4. Leftovers (carried over)
+
+- Mapper fixture test: blocked until `public/data/Sample/Dlls/3_SmartPlant.PID.json` exists; the test runner added in 3.C unblocks the harness half.
+- Backend: `fw` per DLL; export interface methods and attributes for all DLLs; optional `search-index.json` (2.10); regenerate `public/data`.
 - Audit table warning-count column.
-- Performance check (17k audit rows, 2k+ nodes).
-- Optional: `react-router-dom`; sync script for `Backend-Audits/data` and `public/data`.
+- Performance check of 17k audit rows and 2k+ graph nodes.
+- Optional: `react-router-dom` (so Search results are linkable); sync script for `Backend-Audits/data` and `public/data`.
 
 ---
 
 #### Execution Sequence
 
-1. Colour modes cleanup (C): complete.
-2. Split detail content / panel / sheet plus empty state (B): complete.
-3. `SplitLayout`, theme constants and `App` wiring for Graph and Table (A): complete.
-4. Responsive and animation polish (D): complete.
-5. Cleanup and validation (E): complete; mapper fixture test blocked on the missing fixture and test harness.
+1. Foundations (A): types, flatten / index / query, worker; verify in the console on SmartPlant 3D.
+2. Page and table (B) with progress and partial results.
+3. Click-through into the detail panel.
+4. Tests and performance pass (C); tune debounce, caps and concurrency from measurements.
+5. Optional backend `search-index.json`, then IndexedDB cache.
+
+#### Open questions
+
+- Is `DescriptionAttribute` the only source of "description", or will a dedicated field be exported?
+- Should search span both suites at once, or only the selected suite (plan assumes selected suite)?
+- Is adding Vitest (and optionally a virtual-list library) acceptable?

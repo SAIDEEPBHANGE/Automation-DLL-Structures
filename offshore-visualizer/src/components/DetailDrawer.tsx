@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Accordion,
   AccordionDetails,
@@ -35,6 +35,7 @@ interface DetailContentProps {
   isLoading: boolean;
   onJumpToNode: (nodeId: string) => void;
   onClose?: () => void;
+  focusType?: string | null;
 }
 
 const PAGE_SIZE = 40;
@@ -204,14 +205,16 @@ const MemberRow: React.FC<{ member: MemberItem; onOpenType?: (name: string) => v
 const TypeCard: React.FC<{
   item: TypeDetailItem;
   expanded: boolean;
+  elementId?: string;
   onToggle: (key: string, open: boolean) => void;
   onOpenType: (name: string) => void;
-}> = ({ item, expanded, onToggle, onOpenType }) => {
+}> = ({ item, expanded, elementId, onToggle, onOpenType }) => {
   const grouped = MEMBER_ORDER.map((k) => ({ kind: k, items: item.members.filter((m) => m.kind === k) })).filter(
     (g) => g.items.length > 0,
   );
   return (
     <Accordion
+      id={elementId}
       disableGutters
       expanded={expanded}
       onChange={(_, open) => onToggle(item.key, open)}
@@ -355,6 +358,7 @@ export const DetailContent: React.FC<DetailContentProps> = ({
   isLoading,
   onJumpToNode,
   onClose,
+  focusType,
 }) => {
   const prefersReducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
   const [tab, setTab] = useState(0);
@@ -365,8 +369,38 @@ export const DetailContent: React.FC<DetailContentProps> = ({
   const [attrOnly, setAttrOnly] = useState(false);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
+  const focusedType = useMemo(
+    () => detail?.types.find((type) => type.fullName === focusType || type.name === focusType),
+    [detail, focusType],
+  );
+
+  useEffect(() => {
+    if (!focusedType || isLoading) return;
+    const frame = window.requestAnimationFrame(() => {
+      setTab(2);
+      setKindFilter("All");
+      setObsoleteOnly(false);
+      setAttrOnly(false);
+      setTypeSearch(focusedType.name);
+      setVisible(PAGE_SIZE);
+      setExpandedKey(focusedType.key);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [focusedType, isLoading]);
+
+  useEffect(() => {
+    if (!focusedType || expandedKey !== focusedType.key || tab !== 2) return;
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById(`detail-type-${encodeURIComponent(focusedType.key)}`)?.scrollIntoView({
+        block: "center",
+        behavior: "smooth",
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [expandedKey, focusedType, tab]);
+
   const openType = (name: string) => {
-    const target = detail?.types.find((t) => t.name === name);
+    const target = detail?.types.find((t) => t.name === name || t.fullName === name);
     if (!target) return;
     setKindFilter("All");
     setObsoleteOnly(false);
@@ -580,6 +614,7 @@ export const DetailContent: React.FC<DetailContentProps> = ({
                         key={t.key}
                         item={t}
                         expanded={expandedKey === t.key}
+                        elementId={focusedType?.key === t.key ? `detail-type-${encodeURIComponent(t.key)}` : undefined}
                         onToggle={toggleType}
                         onOpenType={openType}
                       />
@@ -611,6 +646,7 @@ interface DetailPanelProps {
   isLoading: boolean;
   onClear: () => void;
   onJumpToNode: (nodeId: string) => void;
+  focusType?: string | null;
 }
 
 export const DetailEmpty: React.FC<{ data: MasterGraphPayload | null }> = ({ data }) => {
@@ -665,6 +701,7 @@ export const DetailPanel: React.FC<DetailPanelProps> = ({
   isLoading,
   onClear,
   onJumpToNode,
+  focusType,
 }) => (
   <Box sx={{ height: "100%", minHeight: 0 }}>
     {detail ? (
@@ -673,6 +710,7 @@ export const DetailPanel: React.FC<DetailPanelProps> = ({
         isLoading={isLoading}
         onJumpToNode={onJumpToNode}
         onClose={onClear}
+        focusType={focusType}
       />
     ) : (
       <DetailEmpty data={data} />
@@ -687,6 +725,7 @@ interface DetailSheetProps {
   detail: DllDetailPayload | null;
   isLoading: boolean;
   onJumpToNode: (nodeId: string) => void;
+  focusType?: string | null;
 }
 
 export const DetailSheet: React.FC<DetailSheetProps> = ({
@@ -696,6 +735,7 @@ export const DetailSheet: React.FC<DetailSheetProps> = ({
   detail,
   isLoading,
   onJumpToNode,
+  focusType,
 }) => {
   const prefersReducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
 
@@ -734,6 +774,7 @@ export const DetailSheet: React.FC<DetailSheetProps> = ({
         detail={detail}
         isLoading={isLoading}
         onJumpToNode={onJumpToNode}
+        focusType={focusType}
       />
     </SwipeableDrawer>
   );

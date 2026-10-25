@@ -9,6 +9,8 @@ import { Loader } from "./components/Loader";
 import { DetailPanel, DetailSheet } from "./components/DetailDrawer";
 import { AuditPage } from "./pages/AuditPage";
 import { GraphTablePage } from "./pages/GraphTablePage";
+import { SearchPage } from "./pages/SearchPage";
+import type { SearchRow } from "./types/search";
 import { ColorLegend, type ColorMode } from "./components/ColorLegend";
 import { SplitLayout } from "./components/SplitLayout";
 import { getOrigin, type DllOrigin } from "./utils/dllClassifier";
@@ -24,6 +26,7 @@ export const App: React.FC = () => {
   const [data, setData] = useState<MasterGraphPayload | null>(null);
   const [selectedSuite, setSelectedSuite] = useState<Suite>("SmartPlant3D");
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
+  const [focusedType, setFocusedType] = useState<string | null>(null);
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
   const [loadedSuite, setLoadedSuite] = useState<Suite | null>(null);
   const isLoading = loadedSuite !== selectedSuite;
@@ -33,6 +36,7 @@ export const App: React.FC = () => {
 
   const handleSuiteChange = useCallback((suite: Suite) => {
     setSelectedNode(null);
+    setFocusedType(null);
     setMobileSheetOpen(false);
     setSelectedSuite(suite);
     setPage((p) => (p === "audit" ? "graph" : p));
@@ -88,6 +92,7 @@ export const App: React.FC = () => {
   }, [data]);
 
   const handleNodeClick = useCallback((nodeId: string | null) => {
+    setFocusedType(null);
     setSelectedNode(nodeId);
     if (nodeId && !isDesktop) setMobileSheetOpen(true);
     if (!nodeId) setMobileSheetOpen(false);
@@ -95,7 +100,14 @@ export const App: React.FC = () => {
 
   const handleSearchSelect = useCallback((nodeId: string) => {
     setPage((p) => (p === "audit" ? "graph" : p));
+    setFocusedType(null);
     setSelectedNode(nodeId);
+    if (!isDesktop) setMobileSheetOpen(true);
+  }, [isDesktop]);
+
+  const handleSearchResultSelect = useCallback((row: SearchRow) => {
+    setSelectedNode(String(row.dllId));
+    setFocusedType(row.typeFullName ?? row.typeName ?? null);
     if (!isDesktop) setMobileSheetOpen(true);
   }, [isDesktop]);
 
@@ -121,8 +133,9 @@ export const App: React.FC = () => {
                   data={data}
                   detail={nodeDetail}
                   isLoading={isDetailLoading}
-                  onClear={() => setSelectedNode(null)}
+                  onClear={() => handleNodeClick(null)}
                   onJumpToNode={handleNodeClick}
+                  focusType={focusedType}
                 />
               ) : null
             }
@@ -157,8 +170,9 @@ export const App: React.FC = () => {
                   data={data}
                   detail={nodeDetail}
                   isLoading={isDetailLoading}
-                  onClear={() => setSelectedNode(null)}
+                  onClear={() => handleNodeClick(null)}
                   onJumpToNode={handleNodeClick}
+                  focusType={focusedType}
                 />
               ) : null
             }
@@ -171,6 +185,35 @@ export const App: React.FC = () => {
                 selectedNodeId={selectedNode}
                 onSelectNode={handleNodeClick}
               />
+              </Box>
+            </Fade>
+          </SplitLayout>
+        ) : page === "search" ? (
+          <SplitLayout
+            isDesktop={isDesktop}
+            panel={
+              isDesktop ? (
+                <DetailPanel
+                  data={isLoading ? null : data}
+                  detail={nodeDetail}
+                  isLoading={isDetailLoading}
+                  onClear={() => handleNodeClick(null)}
+                  onJumpToNode={handleNodeClick}
+                  focusType={focusedType}
+                />
+              ) : null
+            }
+          >
+            <Fade in key="search" timeout={400}>
+              <Box sx={{ position: "absolute", inset: 0 }}>
+                <SearchPage
+                  key={selectedSuite}
+                  suite={selectedSuite}
+                  data={isLoading ? null : data}
+                  isLoading={isLoading}
+                  active={page === "search"}
+                  onSelectResult={handleSearchResultSelect}
+                />
               </Box>
             </Fade>
           </SplitLayout>
@@ -200,6 +243,7 @@ export const App: React.FC = () => {
           detail={nodeDetail}
           isLoading={isDetailLoading}
           onJumpToNode={handleNodeClick}
+          focusType={focusedType}
         />
       )}
     </Box>
