@@ -1,7 +1,7 @@
 import type { MasterGraphPayload } from "../types/graph";
 import type { ConnectedDll } from "../types/detail";
 
-export type Suite = "SmartPlant3D" | "SmartPlantPID" | "Sample";
+export type Suite = "SmartPlant3D" | "SmartPlantPID";
 
 export const SUITES: Array<{ id: Suite; label: string }> = [
   { id: "SmartPlant3D", label: "SmartPlant 3D" },

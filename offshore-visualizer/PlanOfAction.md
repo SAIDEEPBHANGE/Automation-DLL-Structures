@@ -1,78 +1,77 @@
-### Plan of Action (Remaining Work)
+### Plan of Action (Implementation Status)
 
-Reference: `SampleJsonStructure.md`. This document is a plan only; no code is changed yet.
+Reference: `SampleJsonStructure.md`.
 
-Done and removed: foundations, Navbar with Graph / Table / Audit, drawer (attributes, Obsolete, delegates, type links, event jump, framework chip), audit steps / warnings / filter, 3D graph basics, render loop pause, framework colour mode and legend, Table framework column. `tsc`, `eslint` and `vite build` pass.
+Implemented on 2026-10-25: canvas/table split layout with a docked desktop detail panel, mobile swipeable detail sheet, empty suite summary, responsive selection flows, cross-fade detail changes, reduced-motion handling, and Origin / Default canvas colour modes. Framework classification remains available in the detail panel and table.
+
+Validation: `npm run lint` and `npm run build` pass. The mapper fixture test remains blocked: `public/data/Sample/Dlls/3_SmartPlant.PID.json` is not present, and the visualizer has no source-level test harness.
+
+Done and removed: foundations, Navbar (Graph / Table / Audit), audit page, Table page, drawer (attributes on fields / params / methods / interface methods, Obsolete, delegates, type links, event jump, "With attributes" and "Obsolete only" filters, "no parameters" and "not exported" notes), "Sample" fixture suite, Origin colouring (MSIL blue / Vendor orange) with the shared `getOrigin` classifier, render loop pause. `tsc`, `eslint` and `vite build` pass.
 
 ---
 
-#### 1. Analysis: why the drawer looks incomplete
+#### 1. New layout: canvas right, drawer always visible (desktop)
 
-I compared the sample, the code and the real JSON in `public/data` (2,260 detail files, both suites).
+Today the drawer is a temporary overlay that opens on node click. New behaviour:
 
-| Observation | Result |
+| Screen | Layout |
 |---|---|
-| Field, parameter and method `Attributes` in real files | 0 occurrences (all `[]`) |
-| Interfaces with a non-empty `Methods` array in real files | 0 (interface methods are never exported) |
-| Interfaces with `ImplementedInterfaces` | 3,131 (works) |
-| Events with `EventType` | 425 files (works) |
-| Code path for attributes on fields, params, methods, interface methods | Present (`mapAttributes`, `AttributeChips`, `ParamList`) |
+| Desktop / laptop (`md` and up, >= 900 px) | Split view on the Graph page: **detail panel on the left (30 %)**, **3D canvas on the right (70 %)**. The panel is always visible. |
+| Mobile / tablet (< 900 px) | Canvas is full width. The detail panel is a modal bottom sheet that opens on node click and closes with a close button / swipe / backdrop. A floating "Details" button reopens it for the last selected node. |
 
-**Conclusion.** The three reported gaps (class field attributes, method parameter attributes, interface methods with parameters and attributes) are mostly a **data gap**: the JSON currently in `public/data` was produced before the revised backend, so the viewer has nothing to show. The code path has never been exercised with real attribute data, so some rendering bugs may still be hiding. Remaining code risks found while reading:
-
-- Attribute chips are placed in the same row as flags and are 18 px high with a single-line ellipsis; long `description` values are cut off (only the tooltip shows the whole text).
-- Parameter attribute chips render only inside `ParamList`, which is used only for `Method` members; interface methods with no parameters show no parameter block, and a method's parameter attributes are hidden when the member list is collapsed or scrolled (`maxHeight: 360`).
-- `Property` and `Event` members have attributes mapped but chips share the flag row, which is not rendered when there are no flags and no attributes; fine, but properties show no accessor attributes visually distinct from fields.
-- No dev fixture exists, so nothing in the UI can be checked against the sample's shapes.
-- The drawer treats a type with no `Methods` as "no methods" with no hint that interface members were not exported.
-
----
+Notes
+- "Canvas to the right side" is read as: panel left, canvas right. If you meant the opposite, only the flex order changes.
+- Table page: same split (table on the right 70 %, panel left 30 %) so both pages behave alike. Audit page stays full width, no panel.
+- When no node is selected, the panel shows an empty state: suite summary (DLL count, edges, generated date, origin counts) and a hint "Click a node or search to see details".
 
 #### 2. Tasks
 
-**A. Detail view completeness (class fields, method parameters, interface methods)**
+**A. Layout (App + theme)**
+1. `theme.ts`: remove the fixed `DRAWER_WIDTH`; add `PANEL_WIDTH_PERCENT = 30` and breakpoint constant `SPLIT_BREAKPOINT = "md"`.
+2. `App.tsx`: wrap the Graph and Table pages in a `SplitLayout` (new `src/components/SplitLayout.tsx`): MUI `Box` flex row, panel `flexBasis: 30 %` (min 340 px, max 560 px), content `flex: 1`, height `calc(100vh - NAV_HEIGHT)`, each pane scrolls independently.
+3. Use `useMediaQuery(theme.breakpoints.up("md"))` once in `App` and pass `isDesktop` down.
+4. Canvas resize: `ThreeGraphCanvas` already uses a `ResizeObserver`; verify it re-fits when the pane width changes (no window-resize dependence). Remove the right padding hacks in `GraphTablePage`.
+5. Camera focus: the selected node centres in the visible 70 % pane, so no offset for the old overlay is needed (remove it if present).
 
-1. Add a dev fixture `public/data/_fixtures/SampleSuite/` (master graph + `Dlls/3_SmartPlant.PID.json`) copied from `SampleJsonStructure.md`, selectable as a third suite ("Sample") so every shape is visible: field attributes, parameter attributes, Obsolete method, interface method with `Conditional` and parameter attribute, delegate with `Range` and `Obsolete`, enum, struct, event.
-2. Rework the member card so attributes are always on their own labelled line (`ATTRIBUTES`) with wrapped, non-truncated chips (no fixed height; `whiteSpace: normal`) for fields, properties, methods and events.
-3. Parameter rows: show parameter attributes above each parameter in every member kind, including interface methods; show "no parameters" for empty methods so the card is never ambiguous.
-4. Interface cards: always render Methods and Properties groups; when an interface has none, show a muted "Members not exported for this interface" note.
-5. Remove the 360 px inner scroll on member lists (let the drawer scroll) or raise it so parameter blocks are not clipped.
-6. Add a "Show members with attributes only" filter chip next to "Obsolete only".
-7. Backend request: export `Methods` and attributes for interfaces, and attributes on fields and parameters, for all 2,260 DLLs; regenerate `public/data` (copy by hand or via a sync script).
-8. Unit-style fixture test (a Node script): run `mapDllDetail` on the fixture and assert every sample field is mapped (attributes on fields, params, methods, interface methods, delegates; `DeclaringType`, `DefaultValue`, event type).
+**B. Detail panel (`DetailDrawer.tsx`)**
+1. Split the component: `DetailContent` (header, tabs, cards; layout-agnostic) and thin wrappers: `DetailPanel` (docked, desktop) and `DetailSheet` (MUI `Drawer anchor="bottom"`, temporary, mobile, 85 vh, with a drag-handle bar and close icon).
+2. Desktop: no close button needed; a "Clear selection" icon returns to the empty state.
+3. Remove the width toggle task (obsolete: width is now 30 %); drop the `localStorage` idea.
+4. Empty-state component (`DetailEmpty`) described in section 1.
+5. Selected node and search keep working; selecting from the Table row also fills the panel.
 
-**B. Node colour by table Origin (MSIL vs Vendor)**
+**C. Colour modes (graph canvas)**
+1. Remove the **Framework** option and its legend rows from the canvas toggle; modes are only `Origin` (default) and `Default`. Do not change Origin or Default behaviour.
+2. `ColorMode = "origin" | "default"`; delete `FRAMEWORK_THREE_COLORS` and `getDllFramework` use inside `ThreeGraphCanvas`, and the `frameworkCounts` computation in `App`.
+3. Legend becomes `ColorLegend` (rename from `FrameworkLegend`): the two-option toggle and the Origin rows only.
+4. Keep framework data elsewhere (drawer chip, Table Framework column and filter) because the user only asked to remove it from the canvas; confirm if those should go as well.
+5. Move the legend so it does not overlap the panel: stay at the canvas bottom-left (now inside the 70 % pane).
 
-The Table's "Origin" column uses `getArchitectureLabel` (`MSIL / .NET` vs `Vendor / Runtime`, based on `isVendorDll`). The graph will use the same logic.
+**D. Responsive and animation**
+1. Mobile sheet slide-up transition (MUI default); respect `prefers-reduced-motion`.
+2. Panel content cross-fades when the selected node changes (`Fade`, 150 ms).
+3. Breakpoint tests: 360, 768, 1024, 1440 px; the 30 % panel never gets narrower than 340 px (below that width use the sheet).
 
-1. New colour mode `"origin"` becomes the default; modes: `Origin`, `Framework`, `Default`.
-2. Colours: MSIL / .NET = bright blue (existing `COLORS.normal`); Vendor / Runtime = amber/orange so it is clearly visible instead of near-black slate (today `COLORS.vendor` is `0x334155`, which is almost invisible on the dark background).
-3. Move the classifier into a single `getOrigin(name)` (`"msil" | "vendor"`) in `dllClassifier.ts`, used by the Table, the graph colours, the legend and the drawer chip, so there is one logic source.
-4. Legend (`FrameworkLegend` becomes `ColorLegend`): two rows with counts for Origin mode; Framework mode stays and shows only when any `fw` is present.
-5. Drawer header chip and Table Origin chip use the same colours as the nodes.
-6. Click on a legend row dims all other origins (quick filter).
-
-**C. Expandable / contractible size with fixed width** (assumption, to confirm)
-
-Interpreted as the detail drawer: a toggle button in its header that switches between two **fixed** widths (compact 420 px and expanded 680 px, today's `DRAWER_WIDTH`), remembered in `localStorage`; the Table page's right padding follows the active width; mobile keeps the bottom sheet (100 % width, 70 vh, expand to 92 vh). Each width is fixed (no free drag).
-If you meant node size in the 3D scene (a size slider or +/- buttons with a fixed canvas width), tell me and I will replace this task.
+**E. Cleanup and validation**
+1. Remove now-unused code: drawer overlay props, `DRAWER_WIDTH` imports, framework canvas pieces.
+2. Update the mapper fixture test (still pending) to run on `public/data/Sample/Dlls/3_SmartPlant.PID.json` asserting attributes, `DeclaringType`, `DefaultValue`, event type and type links.
+3. `npx tsc -b`, `npx eslint src`, `npx vite build`; manual browser check on both suites and the Sample suite.
 
 ---
 
 #### 3. Leftovers
 
-- Backend `fw` per DLL (optional) for the Framework mode.
+- Backend: `fw` per DLL (no longer used by the canvas, still used by the drawer / table); export interface methods and attributes for all DLLs; regenerate `public/data`.
 - Audit table warning-count column.
-- Browser check at mobile / tablet / desktop for both suites; performance check (17k audit rows, 2k+ nodes).
+- Performance check (17k audit rows, 2k+ nodes).
 - Optional: `react-router-dom`; sync script for `Backend-Audits/data` and `public/data`.
 
 ---
 
 #### Execution Sequence
 
-1. Fixture and "Sample" suite (A1) so changes can be seen.
-2. Member card, parameter, interface and filter changes (A2-A6).
-3. Origin colouring, classifier refactor, legend (B).
-4. Drawer width toggle (C).
-5. Fixture test (A8), then `npx tsc -b`, `npx eslint src`, `npx vite build`, manual checks.
-6. Backend data regeneration (A7) in parallel.
+1. Colour modes cleanup (C): complete.
+2. Split detail content / panel / sheet plus empty state (B): complete.
+3. `SplitLayout`, theme constants and `App` wiring for Graph and Table (A): complete.
+4. Responsive and animation polish (D): complete.
+5. Cleanup and validation (E): complete; mapper fixture test blocked on the missing fixture and test harness.

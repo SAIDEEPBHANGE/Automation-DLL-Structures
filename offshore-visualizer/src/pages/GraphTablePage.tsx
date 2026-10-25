@@ -18,7 +18,6 @@ import {
   Typography,
 } from "@mui/material";
 import type { MasterGraphPayload } from "../types/graph";
-import { DRAWER_WIDTH } from "../theme";
 import { FRAMEWORK_LABEL, FRAMEWORK_ORDER, frameworkCss, type FrameworkFamily } from "../utils/frameworkUtils";
 import {
   buildTableRows,
@@ -33,8 +32,6 @@ interface GraphTablePageProps {
   isLoading: boolean;
   selectedNodeId: string | null;
   onSelectNode: (nodeId: string) => void;
-  /** Reserve room on the right while the detail drawer is open on wide screens. */
-  drawerOpen: boolean;
 }
 
 const hideXs = { display: { xs: "none", sm: "table-cell" } };
@@ -44,7 +41,6 @@ export const GraphTablePage: React.FC<GraphTablePageProps> = ({
   isLoading,
   selectedNodeId,
   onSelectNode,
-  drawerOpen,
 }) => {
   const [text, setText] = useState("");
   const [vendor, setVendor] = useState<VendorFilter>("all");
@@ -82,8 +78,6 @@ export const GraphTablePage: React.FC<GraphTablePageProps> = ({
         height: "100%",
         overflowY: "auto",
         p: { xs: 1.5, sm: 3 },
-        pr: { md: drawerOpen ? `${DRAWER_WIDTH + 24}px` : 3 },
-        transition: "padding-right 0.25s ease",
       }}
     >
       <Stack spacing={2} sx={{ maxWidth: 1400, mx: "auto" }}>

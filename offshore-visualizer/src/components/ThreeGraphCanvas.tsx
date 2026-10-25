@@ -5,13 +5,7 @@ import { Box, Paper, Typography } from "@mui/material";
 import type { MasterGraphPayload } from "../types/graph";
 import { buildAdjacency } from "../utils/graphUtils";
 import { getOrigin, ORIGIN_HEX, type DllOrigin } from "../utils/dllClassifier";
-import type { ColorMode } from "./FrameworkLegend";
-import {
-  FRAMEWORK_HEX,
-  FRAMEWORK_ORDER,
-  getDllFramework,
-  type FrameworkFamily,
-} from "../utils/frameworkUtils";
+import type { ColorMode } from "./ColorLegend";
 import { prefersReducedMotion } from "../utils/motion";
 import {
   COLORS,
@@ -35,13 +29,6 @@ const ORIGIN_THREE_COLORS: Record<DllOrigin, THREE.Color> = {
   msil: new THREE.Color(ORIGIN_HEX.msil),
   vendor: new THREE.Color(ORIGIN_HEX.vendor),
 };
-
-const FRAMEWORK_THREE_COLORS = Object.fromEntries(
-  FRAMEWORK_ORDER.map((f) => {
-    const normal = new THREE.Color(FRAMEWORK_HEX[f]);
-    return [f, { normal, vendor: normal.clone().lerp(COLORS.dimmed, 0.55) }];
-  }),
-) as Record<FrameworkFamily, { normal: THREE.Color; vendor: THREE.Color }>;
 
 interface CameraTween {
   start: number;
@@ -383,13 +370,9 @@ export const ThreeGraphCanvas: React.FC<ThreeGraphCanvasProps> = ({
     const neighbors = idNum !== null ? adjacencyRef.current.get(idNum) : undefined;
     const target = targetScaleRef.current;
 
-    const baseColor = (dll: { name: string; fw?: string | null }): THREE.Color => {
+    const baseColor = (dll: { name: string }): THREE.Color => {
       const origin = getOrigin(dll.name);
       if (colorMode === "origin") return ORIGIN_THREE_COLORS[origin];
-      if (colorMode === "framework") {
-        const c = FRAMEWORK_THREE_COLORS[getDllFramework(dll)];
-        return origin === "vendor" ? c.vendor : c.normal;
-      }
       return origin === "vendor" ? COLORS.vendor : COLORS.normal;
     };
 

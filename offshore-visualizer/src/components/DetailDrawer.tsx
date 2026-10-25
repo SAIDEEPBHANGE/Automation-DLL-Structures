@@ -7,7 +7,7 @@ import {
   Button,
   Chip,
   Divider,
-  Drawer,
+  Fade,
   IconButton,
   List,
   ListItemButton,
@@ -19,22 +19,22 @@ import {
   TextField,
   Tooltip,
   Typography,
+  SwipeableDrawer,
   useMediaQuery,
 } from "@mui/material";
-import { useTheme } from "@mui/material/styles";
 import CloseIcon from "@mui/icons-material/Close";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import type { MasterGraphPayload } from "../types/graph";
 import type { AttributeItem, DllDetailPayload, MemberItem, MemberKind, MemberParam, TypeDetailItem, TypeKind, TypeLink } from "../types/detail";
 import { FRAMEWORK_LABEL, frameworkCss } from "../utils/frameworkUtils";
 import { hasAnyAttribute } from "../utils/detailMapper";
-import { NAV_HEIGHT, DRAWER_WIDTH } from "../theme";
+import { getOrigin, ORIGIN_LABEL, type DllOrigin } from "../utils/dllClassifier";
 
-interface DetailDrawerProps {
-  isOpen: boolean;
-  onClose: () => void;
+interface DetailContentProps {
   detail: DllDetailPayload | null;
   isLoading: boolean;
   onJumpToNode: (nodeId: string) => void;
+  onClose?: () => void;
 }
 
 const PAGE_SIZE = 40;
@@ -350,9 +350,13 @@ const TypeLinksSection: React.FC<{ links: TypeLink[]; onJumpToNode: (id: string)
   );
 };
 
-export const DetailDrawer: React.FC<DetailDrawerProps> = ({ isOpen, onClose, detail, isLoading, onJumpToNode }) => {
-  const theme = useTheme();
-  const isDesktop = useMediaQuery(theme.breakpoints.up("md"));
+export const DetailContent: React.FC<DetailContentProps> = ({
+  detail,
+  isLoading,
+  onJumpToNode,
+  onClose,
+}) => {
+  const prefersReducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
   const [tab, setTab] = useState(0);
   const [typeSearch, setTypeSearch] = useState("");
   const [kindFilter, setKindFilter] = useState<TypeKind | "All">("All");
@@ -408,26 +412,10 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({ isOpen, onClose, det
   );
 
   return (
-    <Drawer
-      variant="persistent"
-      anchor={isDesktop ? "right" : "bottom"}
-      open={isOpen && !!detail}
-      slotProps={{
-        paper: {
-          sx: {
-            width: isDesktop ? DRAWER_WIDTH : "100%",
-            maxWidth: "100%",
-            height: isDesktop ? `calc(100% - ${NAV_HEIGHT}px)` : "70vh",
-            top: isDesktop ? NAV_HEIGHT : "auto",
-            bgcolor: "rgba(15, 23, 42, 0.97)",
-            backdropFilter: "blur(12px)",
-            borderRadius: isDesktop ? 0 : "12px 12px 0 0",
-          },
-        },
-      }}
-    >
+    <Box sx={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, bgcolor: "background.paper" }}>
       {detail && (
-        <>
+        <Fade key={detail.id} in timeout={prefersReducedMotion ? 0 : 150}>
+          <Box sx={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
           <Box sx={{ p: 2, display: "flex", alignItems: "flex-start", gap: 1 }}>
             <Box sx={{ flex: 1, minWidth: 0 }}>
               <Stack direction="row" spacing={0.75} useFlexGap sx={{ mb: 1, flexWrap: "wrap" }}>
@@ -445,9 +433,11 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({ isOpen, onClose, det
                 {detail.name}
               </Typography>
             </Box>
-            <IconButton onClick={onClose} aria-label="Close drawer">
-              <CloseIcon />
-            </IconButton>
+            {onClose && (
+              <IconButton onClick={onClose} aria-label="Clear selection">
+                <CloseIcon />
+              </IconButton>
+            )}
           </Box>
           <Divider />
           <Tabs value={tab} onChange={(_, v: number) => setTab(v)} variant="fullWidth">
@@ -608,8 +598,143 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({ isOpen, onClose, det
                 </>
               ))}
           </Box>
-        </>
+          </Box>
+        </Fade>
       )}
-    </Drawer>
+    </Box>
+  );
+};
+
+interface DetailPanelProps {
+  data: MasterGraphPayload | null;
+  detail: DllDetailPayload | null;
+  isLoading: boolean;
+  onClear: () => void;
+  onJumpToNode: (nodeId: string) => void;
+}
+
+export const DetailEmpty: React.FC<{ data: MasterGraphPayload | null }> = ({ data }) => {
+  const originCounts: Record<DllOrigin, number> = { msil: 0, vendor: 0 };
+  data?.dlls.forEach((dll) => {
+    originCounts[getOrigin(dll.name)] += 1;
+  });
+
+  return (
+    <Stack spacing={2} sx={{ p: 2 }}>
+      <Box>
+        <Typography variant="h6" sx={{ fontWeight: 700 }}>
+          Suite overview
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          Click a node or search for an assembly to see its details.
+        </Typography>
+      </Box>
+      {data ? (
+        <>
+          <Stack direction="row" sx={{ flexWrap: "wrap", gap: 0.75 }}>
+            <Chip size="small" variant="outlined" label={`${data.dlls.length.toLocaleString()} DLLs`} />
+            <Chip size="small" variant="outlined" label={`${data.dllEdges.length.toLocaleString()} edges`} />
+          </Stack>
+          <Box>
+            <Typography variant="overline" color="text.secondary">Origin</Typography>
+            <Stack spacing={0.5}>
+              {(["msil", "vendor"] as DllOrigin[]).map((origin) => (
+                <Stack key={origin} direction="row" sx={{ justifyContent: "space-between" }}>
+                  <Typography variant="body2">{ORIGIN_LABEL[origin]}</Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {originCounts[origin].toLocaleString()}
+                  </Typography>
+                </Stack>
+              ))}
+            </Stack>
+          </Box>
+          <Typography variant="caption" color="text.secondary">
+            Generated {data.generatedAt ? new Date(data.generatedAt).toLocaleString() : "date unavailable"}
+          </Typography>
+        </>
+      ) : (
+        <Skeleton variant="rounded" height={96} />
+      )}
+    </Stack>
+  );
+};
+
+export const DetailPanel: React.FC<DetailPanelProps> = ({
+  data,
+  detail,
+  isLoading,
+  onClear,
+  onJumpToNode,
+}) => (
+  <Box sx={{ height: "100%", minHeight: 0 }}>
+    {detail ? (
+      <DetailContent
+        detail={detail}
+        isLoading={isLoading}
+        onJumpToNode={onJumpToNode}
+        onClose={onClear}
+      />
+    ) : (
+      <DetailEmpty data={data} />
+    )}
+  </Box>
+);
+
+interface DetailSheetProps {
+  open: boolean;
+  onOpen: () => void;
+  onClose: () => void;
+  detail: DllDetailPayload | null;
+  isLoading: boolean;
+  onJumpToNode: (nodeId: string) => void;
+}
+
+export const DetailSheet: React.FC<DetailSheetProps> = ({
+  open,
+  onOpen,
+  onClose,
+  detail,
+  isLoading,
+  onJumpToNode,
+}) => {
+  const prefersReducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
+
+  return (
+    <SwipeableDrawer
+      anchor="bottom"
+      open={open}
+      onOpen={onOpen}
+      onClose={onClose}
+      transitionDuration={prefersReducedMotion ? 0 : undefined}
+      slotProps={{
+        paper: {
+          sx: {
+            height: "85vh",
+            maxHeight: "85vh",
+            display: "flex",
+            flexDirection: "column",
+            bgcolor: "rgba(15, 23, 42, 0.98)",
+            backdropFilter: "blur(12px)",
+            borderRadius: "12px 12px 0 0",
+          },
+        },
+      }}
+    >
+      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: 36 }}>
+        <Box sx={{ width: 36, height: 4, borderRadius: 2, bgcolor: "text.secondary" }} />
+        <IconButton
+          onClick={onClose}
+          aria-label="Close details"
+          sx={{ position: "absolute", right: 8, top: 0 }}
+        >
+          <CloseIcon />
+        </IconButton>
+      </Box>
+      <DetailContent
+        detail={detail}
+        isLoading={isLoading}
+        onJumpToNode={onJumpToNode}
+      />
+    </SwipeableDrawer>
   );
 };
